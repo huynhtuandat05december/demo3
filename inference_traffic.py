@@ -271,7 +271,7 @@ def process_single_question(
             'do_sample': False,
         }
 
-        response, _ = model.chat(
+        response = model.chat(
             tokenizer,
             pixel_values,
             full_question,
@@ -280,6 +280,10 @@ def process_single_question(
             history=None,
             return_history=False
         )
+
+        # Handle if response is a tuple
+        if isinstance(response, tuple):
+            response = response[0]
 
         # Extract answer
         answer = extract_answer(response, num_choices=len(choices))
