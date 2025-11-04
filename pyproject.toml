@@ -1,0 +1,23 @@
+[project]
+name = "demo3"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "transformers>=4.52.1",
+    "av",
+    "imageio",
+    "decord",
+    "opencv-python",
+    "bitsandbytes",
+    "tqdm",
+    "pandas",
+    "torchvision",
+    "sentencepiece",
+    "timm",
+    "einops",
+    "accelerate",
+    "bitsandbytes",
+    "ultralytics",
+]
