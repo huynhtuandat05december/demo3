@@ -384,7 +384,7 @@ def main():
 
     # Data arguments
     parser.add_argument('--data_path', type=str,
-                        default='../RoadBuddy/traffic_buddy_train+public_test/public_test',
+                        default='../RoadBuddy/traffic_buddy_train+public_test',
                         help='Path to test data directory')
     parser.add_argument('--samples', type=int, default=None,
                         help='Number of samples to process (default: all)')
