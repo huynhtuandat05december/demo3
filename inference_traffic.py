@@ -429,7 +429,7 @@ def main():
     model, tokenizer = load_model(args.model, args.load_in_8bit, device)
 
     # Load test data
-    json_path = os.path.join(args.data_path, 'public_test.json')
+    json_path = os.path.join(args.data_path, 'public_test/public_test.json')
     print(f"\n[Data] Loading test data from: {json_path}")
 
     with open(json_path, 'r', encoding='utf-8') as f:
