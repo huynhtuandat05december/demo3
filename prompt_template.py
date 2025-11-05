@@ -129,17 +129,17 @@ def format_video_prefix_with_detections(
     for i in range(num_frames):
         frame_line = f'Frame{i+1}: <image>'
 
-        # Add detection annotation if available
-        if detections_dict and frame_indices and i < len(frame_indices):
-            frame_idx = frame_indices[i]
-            if frame_idx in detections_dict and detections_dict[frame_idx]:
-                signs = detections_dict[frame_idx]
-                # Limit to first 3 signs to avoid too long prefixes
-                signs_display = signs[:3]
-                signs_text = ", ".join(signs_display)
-                if len(signs) > 3:
-                    signs_text += f" (+{len(signs)-3} khác)"
-                frame_line += f' [Phát hiện: {signs_text}]'
+        # # Add detection annotation if available
+        # if detections_dict and frame_indices and i < len(frame_indices):
+        #     frame_idx = frame_indices[i]
+        #     if frame_idx in detections_dict and detections_dict[frame_idx]:
+        #         signs = detections_dict[frame_idx]
+        #         # Limit to first 3 signs to avoid too long prefixes
+        #         signs_display = signs[:3]
+        #         signs_text = ", ".join(signs_display)
+        #         if len(signs) > 3:
+        #             signs_text += f" (+{len(signs)-3} khác)"
+        #         frame_line += f' [Phát hiện: {signs_text}]'
 
         lines.append(frame_line)
 
