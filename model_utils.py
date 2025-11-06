@@ -39,6 +39,8 @@ def build_transform(input_size):
 
 def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_size):
     """
+    DEPRECATED: Use load_video_force_2x1_grid() for 16:9 videos instead.
+
     Find the closest aspect ratio from target ratios for dynamic preprocessing.
 
     Args:
@@ -71,6 +73,8 @@ def find_closest_aspect_ratio(aspect_ratio, target_ratios, width, height, image_
 
 def dynamic_preprocess(image, min_num=1, max_num=12, image_size=448, use_thumbnail=False):
     """
+    DEPRECATED: Use load_video_force_2x1_grid() for 16:9 videos instead.
+
     Dynamically preprocess image into multiple patches based on aspect ratio.
 
     Args:
@@ -179,8 +183,181 @@ def get_index(bound, fps, max_frame, first_idx=0, num_segments=32):
     return frame_indices
 
 
+def load_video_force_2x1_grid(
+    video_path: str,
+    num_segments: int = 10,
+    input_size: int = 448
+) -> Tuple[torch.Tensor, List[int], List[Image.Image]]:
+    """
+    Load video frames with fixed 2x1 grid preprocessing for 16:9 videos.
+
+    This function replaces dynamic preprocessing with a fixed approach:
+    - Uniformly samples num_segments frames from the video
+    - Resizes each frame to 896x448 (2:1 ratio, perfect for 16:9 videos)
+    - Splits each frame into 2 patches: [left 448x448, right 448x448]
+    - Preserves high resolution text for better OCR performance
+
+    Args:
+        video_path: Path to video file
+        num_segments: Number of frames to uniformly sample (default: 10)
+        input_size: Base size for each patch (default: 448, creates 896x448 frames)
+
+    Returns:
+        tuple: (pixel_values, num_patches_list, pil_images)
+            - pixel_values: Tensor [num_segments*2, 3, 448, 448] of all patches
+            - num_patches_list: List of 2's, one per frame [2, 2, 2, ...]
+            - pil_images: List of PIL Images (896x448) for OCR processing
+
+    Example:
+        For 10 frames:
+        - pixel_values shape: [20, 3, 448, 448] (10 frames * 2 patches each)
+        - num_patches_list: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+        - pil_images: 10 PIL Images at 896x448 resolution
+    """
+    vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
+    max_frame = len(vr) - 1
+    fps = float(vr.get_avg_fps())
+
+    pixel_values_list = []
+    num_patches_list = []
+    pil_images_for_ocr = []
+
+    # Transform for normalization only (no resize, we handle that manually)
+    transform_normalize = T.Compose([
+        T.ToTensor(),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+    ])
+
+    # Get uniformly sampled frame indices
+    frame_indices = get_index(
+        bound=None,
+        fps=fps,
+        max_frame=max_frame,
+        num_segments=num_segments
+    )
+
+    # Grid dimensions: 2x1 (width x height in patches)
+    target_height = input_size       # 448
+    target_width = input_size * 2    # 896
+
+    for frame_index in frame_indices:
+        # Load frame as PIL Image
+        img_pil = Image.fromarray(vr[frame_index].asnumpy()).convert('RGB')
+
+        # Store original resized frame for OCR
+        resized_img = img_pil.resize((target_width, target_height), Image.BICUBIC)
+        pil_images_for_ocr.append(resized_img)
+
+        # Split into 2 patches: left half and right half
+        patch_left = resized_img.crop((0, 0, input_size, input_size))
+        patch_right = resized_img.crop((input_size, 0, target_width, input_size))
+
+        # Apply normalization to each patch
+        pixel_values_left = transform_normalize(patch_left)
+        pixel_values_right = transform_normalize(patch_right)
+
+        # Stack the 2 patches for this frame
+        frame_patches = torch.stack([pixel_values_left, pixel_values_right])  # [2, 3, 448, 448]
+
+        pixel_values_list.append(frame_patches)
+        num_patches_list.append(2)  # Always 2 patches per frame
+
+    # Concatenate all patches from all frames
+    pixel_values = torch.cat(pixel_values_list)  # [num_segments*2, 3, 448, 448]
+
+    print(f"[2x1 Grid Loader] Loaded {len(pil_images_for_ocr)} frames from video")
+    print(f"[2x1 Grid Loader] Created {pixel_values.shape[0]} patches ({len(pil_images_for_ocr)} frames × 2 patches)")
+    print(f"[2x1 Grid Loader] Pixel values shape: {pixel_values.shape}")
+
+    return pixel_values, num_patches_list, pil_images_for_ocr
+
+
+def load_video_from_indices_2x1_grid(
+    video_path: str,
+    frame_indices: List[int],
+    input_size: int = 448
+) -> Tuple[torch.Tensor, List[int], List[Image.Image]]:
+    """
+    Load specific frames from video with fixed 2x1 grid preprocessing.
+    Used for YOLO-selected frames with high-resolution text preservation.
+
+    This combines YOLO's intelligent frame selection with the 2x1 grid approach:
+    - Loads frames at specific indices (from YOLO detection)
+    - Resizes each frame to 896x448 (2:1 ratio, perfect for 16:9 videos)
+    - Splits each frame into 2 patches: [left 448x448, right 448x448]
+    - Preserves high resolution text for better OCR performance
+
+    Args:
+        video_path: Path to video file
+        frame_indices: List of specific frame indices to load (from YOLO)
+        input_size: Base size for each patch (default: 448, creates 896x448 frames)
+
+    Returns:
+        tuple: (pixel_values, num_patches_list, pil_images)
+            - pixel_values: Tensor [len(frame_indices)*2, 3, 448, 448] of all patches
+            - num_patches_list: List of 2's, one per frame [2, 2, 2, ...]
+            - pil_images: List of PIL Images (896x448) for OCR processing
+
+    Example:
+        For 8 YOLO-selected frames:
+        - pixel_values shape: [16, 3, 448, 448] (8 frames * 2 patches each)
+        - num_patches_list: [2, 2, 2, 2, 2, 2, 2, 2]
+        - pil_images: 8 PIL Images at 896x448 resolution
+    """
+    vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
+
+    pixel_values_list = []
+    num_patches_list = []
+    pil_images_for_ocr = []
+
+    # Transform for normalization only (no resize, we handle that manually)
+    transform_normalize = T.Compose([
+        T.ToTensor(),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+    ])
+
+    # Grid dimensions: 2x1 (width x height in patches)
+    target_height = input_size       # 448
+    target_width = input_size * 2    # 896
+
+    for frame_index in frame_indices:
+        # Ensure frame_index is within bounds
+        frame_index = min(frame_index, len(vr) - 1)
+
+        # Load frame as PIL Image
+        img_pil = Image.fromarray(vr[frame_index].asnumpy()).convert('RGB')
+
+        # Store original resized frame for OCR
+        resized_img = img_pil.resize((target_width, target_height), Image.BICUBIC)
+        pil_images_for_ocr.append(resized_img)
+
+        # Split into 2 patches: left half and right half
+        patch_left = resized_img.crop((0, 0, input_size, input_size))
+        patch_right = resized_img.crop((input_size, 0, target_width, input_size))
+
+        # Apply normalization to each patch
+        pixel_values_left = transform_normalize(patch_left)
+        pixel_values_right = transform_normalize(patch_right)
+
+        # Stack the 2 patches for this frame
+        frame_patches = torch.stack([pixel_values_left, pixel_values_right])  # [2, 3, 448, 448]
+
+        pixel_values_list.append(frame_patches)
+        num_patches_list.append(2)  # Always 2 patches per frame
+
+    # Concatenate all patches from all frames
+    pixel_values = torch.cat(pixel_values_list)  # [len(frame_indices)*2, 3, 448, 448]
+
+    print(f"[2x1 Grid YOLO Loader] Loaded {len(pil_images_for_ocr)} YOLO-selected frames")
+    print(f"[2x1 Grid YOLO Loader] Created {pixel_values.shape[0]} patches ({len(pil_images_for_ocr)} frames × 2 patches)")
+
+    return pixel_values, num_patches_list, pil_images_for_ocr
+
+
 def load_video(video_path, bound=None, input_size=448, max_num=1, num_segments=32):
     """
+    DEPRECATED: Use load_video_force_2x1_grid() for 16:9 videos instead.
+
     Load and preprocess video frames with uniform sampling.
 
     Args:
@@ -215,6 +392,8 @@ def load_video(video_path, bound=None, input_size=448, max_num=1, num_segments=3
 
 def load_video_from_indices(video_path, frame_indices, input_size=448, max_num=1):
     """
+    DEPRECATED: Use load_video_force_2x1_grid() for 16:9 videos instead.
+
     Load specific frames from video by their indices.
     Used for YOLO-based frame selection.
 

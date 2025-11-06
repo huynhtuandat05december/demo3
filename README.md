@@ -1,13 +1,21 @@
 # Traffic Video Question Answering - Demo3
 
-InternVL3-8B based video question answering system with intelligent YOLO-based frame selection and detection-aware prompting for Vietnamese traffic safety questions.
+InternVL3-8B based video question answering system with intelligent YOLO-based frame selection, fixed 2x1 grid preprocessing for 16:9 videos, and high-resolution text preservation for Vietnamese traffic safety questions.
 
 ## Features
 
+- **Fixed 2x1 Grid Preprocessing**: Optimized for 16:9 videos (98% of dataset)
+  - Resizes frames to 896x448 (preserves aspect ratio)
+  - Splits into 2×448x448 patches for high-resolution text
+  - No more dynamic preprocessing complexity
 - **Custom Vietnamese Traffic Sign Detection**: Uses trained YOLO model with 52 Vietnamese traffic sign classes
+- **Hybrid YOLO + Uniform Sampling**: Combines intelligent frame selection with comprehensive coverage
+  - YOLO frames: Frames with detected traffic signs
+  - Uniform frames: Evenly sampled across video for context
+  - Both use 2x1 grid preprocessing
 - **Detection-Aware Prompting**: Passes detected sign names to InternVL3 as additional context
-- **Intelligent Frame Selection**: Ranks frames by total sign area (sum of all signs detected)
-- **Fallback Strategy**: Automatically falls back to uniform sampling if YOLO doesn't detect anything
+- **OCR-Ready PIL Images**: Returns 896x448 PIL images for future OCR integration
+- **Compensation Logic**: If YOLO fails, compensates with additional uniform frames
 - **Efficient Caching**: Caches video frames to avoid redundant processing (multiple questions per video)
 - **Multi-GPU Support**: Automatic distribution across multiple GPUs if available
 - **8-bit Quantization**: Optional 8-bit mode for reduced memory usage (~10-12GB vs 16-20GB)
@@ -48,13 +56,16 @@ python inference_traffic.py --yolo_model /path/to/model.pt --load_in_8bit
 python inference_traffic.py --yolo_model /path/to/model.pt --samples 10
 ```
 
-**Adjust frame settings**:
+**Adjust frame settings** (separate control for YOLO and uniform frames):
 ```bash
-# More frames for better accuracy (slower)
-python inference_traffic.py --yolo_model /path/to/model.pt --num_frames 16 --max_num 6
+# More YOLO frames, fewer uniform frames (focus on detected signs)
+python inference_traffic.py --yolo_model /path/to/model.pt --num_frames_yolo 12 --num_frames_normal 4
 
-# Fewer frames for faster inference
-python inference_traffic.py --yolo_model /path/to/model.pt --num_frames 4 --max_num 1
+# Balanced approach (default)
+python inference_traffic.py --yolo_model /path/to/model.pt --num_frames_yolo 8 --num_frames_normal 8
+
+# More uniform frames, fewer YOLO frames (broader context)
+python inference_traffic.py --yolo_model /path/to/model.pt --num_frames_yolo 4 --num_frames_normal 12
 ```
 
 **Disable YOLO** (use uniform sampling only, no detection context):
@@ -74,8 +85,8 @@ python inference_traffic.py \
     --model OpenGVLab/InternVL3-8B \
     --yolo_model /path/to/your/trained_model.pt \
     --load_in_8bit \
-    --num_frames 8 \
-    --max_num 3 \
+    --num_frames_yolo 8 \
+    --num_frames_normal 8 \
     --samples 50 \
     --output_dir ./results
 ```
@@ -89,8 +100,9 @@ python inference_traffic.py \
 | `--yolo_model` | None | **Path to trained YOLO model (.pt file)** |
 | `--data_path` | `../RoadBuddy/traffic_buddy_train+public_test/public_test` | Path to test data |
 | `--samples` | None (all) | Number of samples to process |
-| `--num_frames` | 8 | Frames to extract per video |
-| `--max_num` | 3 | Max patches per frame |
+| `--num_frames_yolo` | 8 | Frames to extract using YOLO selection (2x1 grid) |
+| `--num_frames_normal` | 8 | Frames to extract using uniform sampling (2x1 grid) |
+| `--max_num` | 3 | ~~Deprecated~~ (2x1 grid always uses 2 patches) |
 | `--no_yolo` | False | Disable YOLO frame selection |
 | `--output_dir` | `./output` | Output directory for results |
 
@@ -127,31 +139,62 @@ demo3/
 └── README.md                  # This file
 ```
 
-## Frame Selection Strategy
+## Frame Selection & Preprocessing Strategy
 
-### YOLO-Based Selection with Detection Context (Default)
+### New 2x1 Grid Preprocessing (Optimized for 16:9 Videos)
 
-1. **Stage 1 - Super-fast Filtering**:
-   - Scan all frames
-   - Filter out blurry frames (Laplacian variance < 100)
-   - Run trained YOLO model to detect Vietnamese traffic signs (all 52 classes)
-   - Confidence threshold: 0.3 (configurable)
+All frames (both YOLO and uniform) now use fixed 2x1 grid preprocessing:
 
-2. **Stage 2 - Ranking by Total Sign Area**:
-   - Calculate **total sign area** per frame (sum of all detected signs)
-   - Rank frames by total area (frames with more/larger signs rank higher)
-   - Select top-k frames with highest total sign area
+1. **Resize to 896x448**:
+   - Preserves 16:9 aspect ratio (98% of dataset)
+   - 2:1 ratio perfect for splitting into 2 patches
+   - Maintains high resolution for text (vs squashing to 448x448)
 
-3. **Detection Context Integration**:
-   - Extract detected sign class names for each selected frame
-   - Pass sign names to InternVL3 via two methods:
-     - **Frame Prefix**: `Frame1: <image> [Phát hiện: Cấm rẽ trái, Đường một chiều]`
-     - **Prompt Context**: List of detected signs included in system prompt
-   - Helps InternVL3 focus on relevant traffic information
+2. **Split into 2 patches**:
+   - Left patch: 0-448px → 448x448
+   - Right patch: 448-896px → 448x448
+   - Always 2 patches per frame (predictable, no dynamic complexity)
 
-4. **Fallback**:
-   - If YOLO finds nothing, automatically use uniform sampling
-   - Ensures inference always succeeds even without detections
+3. **Benefits**:
+   - **High-res text preservation**: Road signs, street names stay sharp
+   - **OCR-ready**: PIL images at 896x448 available for future OCR
+   - **Consistent**: No variable patch counts, always 2 per frame
+   - **Fast**: Simpler than dynamic preprocessing
+
+### Hybrid YOLO + Uniform Strategy (Default)
+
+**Method 1: YOLO Frame Selection (with 2x1 grid)**
+
+1. **Intelligent Detection**:
+   - Scan all frames with trained YOLO model
+   - Filter blurry frames (Laplacian variance < 100)
+   - Detect Vietnamese traffic signs (52 classes)
+   - Rank by total sign area (sum of all detected signs)
+
+2. **Select Top Frames**:
+   - Choose `num_frames_yolo` frames with most/largest signs
+   - Apply 2x1 grid preprocessing (896x448 → 2×448x448)
+   - Extract detection metadata for context
+
+3. **Detection Context**:
+   - Pass detected sign names to InternVL3 in prompt
+   - Helps model focus on relevant traffic information
+
+**Method 2: Uniform Sampling (with 2x1 grid)**
+
+1. **Even Distribution**:
+   - Sample `num_frames_normal` frames evenly across video
+   - Provides general context beyond detected signs
+   - Apply 2x1 grid preprocessing (896x448 → 2×448x448)
+
+2. **Compensation**:
+   - If YOLO fails: `num_frames_normal` += `num_frames_yolo`
+   - Ensures consistent total frame count
+
+**Combined Result**:
+- Total frames: `num_frames_yolo` + `num_frames_normal`
+- Total patches: (Total frames) × 2
+- Example: 8 YOLO + 8 uniform = 16 frames = 32 patches
 
 ### Vietnamese Traffic Sign Classes (52 total)
 
@@ -162,28 +205,33 @@ The YOLO model detects all Vietnamese traffic signs including:
 - Directional signs (Đường một chiều, Chỉ được rẽ trái, etc.)
 - Informational signs (Bến xe buýt, Camera giám sát, etc.)
 
-### Uniform Sampling (Fallback/Manual)
+### Pure Uniform Sampling (No YOLO)
 
+Use `--no_yolo` flag to disable YOLO and use only uniform sampling:
 - Evenly distributed frames across video duration
+- All frames use 2x1 grid preprocessing
 - Simple and reliable, no detection context
-- Use with `--no_yolo` flag when YOLO model not available
+- Useful when YOLO model not available or for baseline comparison
 
 ## Performance
 
-### Speed
-- **8 frames, max_num=3**: ~2-3 minutes per video (balanced)
-- **16 frames, max_num=6**: ~5-7 minutes per video (high quality)
-- **4 frames, max_num=1**: ~1-2 minutes per video (fast)
+### Speed (with 2x1 Grid Preprocessing)
+- **16 total frames** (8 YOLO + 8 uniform = 32 patches): ~2-3 minutes per video (balanced)
+- **24 total frames** (12 YOLO + 12 uniform = 48 patches): ~4-6 minutes per video (high quality)
+- **10 total frames** (5 YOLO + 5 uniform = 20 patches): ~1-2 minutes per video (fast)
+
+*Note: 2x1 grid always creates 2 patches per frame, regardless of settings*
 
 ### Memory Requirements
 - **Full precision**: 16-20GB VRAM
 - **8-bit quantization**: 10-12GB VRAM
 - **With YOLO**: +2-3GB VRAM
+- **2x1 Grid overhead**: Minimal (same as before)
 
 ### Expected Runtime (405 questions, 182 videos)
-- **Fast mode** (4 frames): ~2-3 hours
-- **Balanced mode** (8 frames): ~3-5 hours
-- **High quality** (16 frames): ~6-10 hours
+- **Fast mode** (10 total frames): ~2-3 hours
+- **Balanced mode** (16 total frames): ~3-5 hours
+- **High quality** (24 total frames): ~5-8 hours
 
 *Note: Video caching significantly reduces time since multiple questions share videos*
 
@@ -192,10 +240,10 @@ The YOLO model detects all Vietnamese traffic signs including:
 ### CUDA Out of Memory
 ```bash
 # Use 8-bit quantization
-python inference_traffic.py --load_in_8bit
+python inference_traffic.py --yolo_model /path/to/model.pt --load_in_8bit
 
-# Or reduce frames/patches
-python inference_traffic.py --num_frames 4 --max_num 1
+# Or reduce total frames (YOLO + uniform)
+python inference_traffic.py --yolo_model /path/to/model.pt --num_frames_yolo 4 --num_frames_normal 4
 ```
 
 ### YOLO Model Not Provided
@@ -286,14 +334,15 @@ The output CSV now includes two additional columns to track frame selection perf
 
 ### Additional Columns
 
-1. **`frame_strategy`** - Which strategy was used:
-   - `yolo_detection`: YOLO successfully detected signs and selected frames
-   - `uniform_sampling`: Fallback to uniform sampling (no detections or --no_yolo flag)
+1. **`frame_strategy`** - Which preprocessing strategy was used:
+   - `2x1_grid_yolo_and_uniform`: Both YOLO and uniform frames combined (most common)
+   - `2x1_grid_yolo_only`: Only YOLO frames (when num_frames_normal=0)
+   - `2x1_grid_uniform_only`: Only uniform frames (YOLO failed or --no_yolo flag)
    - `error`: Video loading/processing error
 
-2. **`num_detections`** - Total number of traffic signs detected across all selected frames
-   - For `yolo_detection`: Sum of all signs detected in selected frames
-   - For `uniform_sampling` or `error`: Always 0
+2. **`num_detections`** - Total number of traffic signs detected across all YOLO frames
+   - For strategies with YOLO: Sum of all signs detected in YOLO-selected frames
+   - For `2x1_grid_uniform_only` or `error`: Always 0
 
 ### Strategy Statistics
 
@@ -301,12 +350,15 @@ After processing, the script automatically prints statistics:
 
 ```
 [Statistics] Frame Selection Strategies:
-  yolo_detection: 350 (86.4%)
-  uniform_sampling: 55 (13.6%)
+  2x1_grid_yolo_and_uniform: 350 (86.4%)
+  2x1_grid_uniform_only: 55 (13.6%)
   Average detections per YOLO frame: 4.2
 ```
 
-This helps you:
-- Understand how often YOLO successfully detected signs
-- Identify videos where fallback was needed
-- Analyze correlation between detections and answer accuracy
+### New 2x1 Grid Benefits Tracking
+
+All strategies now use 2x1 grid preprocessing:
+- **Consistent patches**: Always 2 patches per frame
+- **Total patches**: (num_frames_yolo + num_frames_normal) × 2
+- **High-res text**: All frames at 896x448 before splitting
+- **OCR-ready**: PIL images available in cache for future enhancement

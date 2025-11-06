@@ -19,7 +19,7 @@ import torch
 from transformers import AutoModel, AutoTokenizer
 from tqdm import tqdm
 
-from model_utils import load_video, load_video_from_indices, load_video_from_indices_with_context, split_model
+from model_utils import load_video, load_video_from_indices, load_video_from_indices_with_context, split_model, load_video_force_2x1_grid, load_video_from_indices_2x1_grid
 from prompt_template import create_traffic_prompt, create_traffic_prompt_with_context, format_video_prefix_with_detections
 from frame_selector import find_best_frames_with_context
 
@@ -178,13 +178,14 @@ def process_single_question(
     # Load video frames (with caching)
     if video_path not in video_cache:
         try:
-            # Extract frames using both methods
+            # Use 2x1 grid preprocessing with YOLO + uniform sampling combination
             yolo_pixel_values = None
             yolo_num_patches_list = None
+            yolo_pil_images = None
             frame_indices = None
             detections_dict = None
 
-            # Method 1: YOLO-based frame selection
+            # Method 1: YOLO-based frame selection with 2x1 grid
             yolo_succeeded = False
             if use_yolo and yolo_model_path and num_frames_yolo > 0:
                 frame_indices, detections_dict = find_best_frames_with_context(
@@ -196,19 +197,19 @@ def process_single_question(
 
                 if frame_indices is not None and len(frame_indices) > 0:
                     print(f"  [Video] YOLO-selected frames: {frame_indices}")
-                    yolo_pixel_values, yolo_num_patches_list = load_video_from_indices(
-                        full_video_path,
-                        frame_indices,
-                        input_size=448,
-                        max_num=max_num
+                    yolo_pixel_values, yolo_num_patches_list, yolo_pil_images = load_video_from_indices_2x1_grid(
+                        video_path=full_video_path,
+                        frame_indices=frame_indices,
+                        input_size=448
                     )
                     yolo_succeeded = True
                 else:
                     print(f"  [WARNING] YOLO detection found no frames, compensating with uniform sampling")
 
-            # Method 2: Uniform sampling (with compensation if YOLO failed)
+            # Method 2: Uniform sampling with 2x1 grid (with compensation if YOLO failed)
             normal_pixel_values = None
             normal_num_patches_list = None
+            normal_pil_images = None
 
             # Calculate uniform frame count: add YOLO frames if YOLO failed
             uniform_frame_count = num_frames_normal
@@ -218,12 +219,11 @@ def process_single_question(
 
             if uniform_frame_count > 0:
                 if yolo_succeeded:
-                    print(f"  [Video] Uniform sampling: {uniform_frame_count} frames")
-                normal_pixel_values, normal_num_patches_list = load_video(
-                    full_video_path,
+                    print(f"  [Video] Uniform sampling: {uniform_frame_count} frames with 2x1 grid")
+                normal_pixel_values, normal_num_patches_list, normal_pil_images = load_video_force_2x1_grid(
+                    video_path=full_video_path,
                     num_segments=uniform_frame_count,
-                    input_size=448,
-                    max_num=max_num
+                    input_size=448
                 )
 
             # Concatenate frames from both methods
@@ -231,19 +231,22 @@ def process_single_question(
                 # Both methods succeeded - concatenate
                 pixel_values = torch.cat([yolo_pixel_values, normal_pixel_values], dim=0)
                 num_patches_list = yolo_num_patches_list + normal_num_patches_list
-                strategy = 'yolo_and_uniform'
-                print(f"  [Video] Combined: {len(yolo_num_patches_list)} YOLO + {len(normal_num_patches_list)} normal = {len(num_patches_list)} total frames")
+                pil_images = yolo_pil_images + normal_pil_images
+                strategy = '2x1_grid_yolo_and_uniform'
+                print(f"  [Video] Combined: {len(yolo_num_patches_list)} YOLO + {len(normal_num_patches_list)} uniform = {len(num_patches_list)} total frames")
             elif yolo_pixel_values is not None:
                 # Only YOLO succeeded
                 pixel_values = yolo_pixel_values
                 num_patches_list = yolo_num_patches_list
-                strategy = 'yolo_only'
+                pil_images = yolo_pil_images
+                strategy = '2x1_grid_yolo_only'
                 print(f"  [Video] Using only YOLO frames: {len(num_patches_list)} frames")
             elif normal_pixel_values is not None:
                 # Only normal succeeded
                 pixel_values = normal_pixel_values
                 num_patches_list = normal_num_patches_list
-                strategy = 'uniform_only'
+                pil_images = normal_pil_images
+                strategy = '2x1_grid_uniform_only'
                 frame_indices = None
                 detections_dict = None
                 print(f"  [Video] Using only uniform frames: {len(num_patches_list)} frames")
@@ -256,6 +259,7 @@ def process_single_question(
                 'pixel_values': pixel_values.cpu(),
                 'num_patches_list': num_patches_list,
                 'num_frames': len(num_patches_list),
+                'pil_images': pil_images,  # Store for OCR integration
                 'frame_indices': frame_indices,
                 'detections_dict': detections_dict,
                 'strategy': strategy
