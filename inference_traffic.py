@@ -130,7 +130,8 @@ def process_single_question(
     tokenizer,
     video_cache: Dict,
     base_path: str,
-    num_frames: int,
+    num_frames_yolo: int,
+    num_frames_normal: int,
     max_num: int,
     use_yolo: bool = True,
     yolo_model_path: Optional[str] = None,
@@ -145,7 +146,8 @@ def process_single_question(
         tokenizer: Loaded tokenizer
         video_cache: Cache for video frames
         base_path: Base path to data directory
-        num_frames: Number of frames to extract
+        num_frames_yolo: Number of frames to extract when using YOLO
+        num_frames_normal: Number of frames to extract when using uniform sampling
         max_num: Maximum number of patches per frame
         use_yolo: Whether to use YOLO for frame selection
         yolo_model_path: Path to trained YOLO model
@@ -176,44 +178,78 @@ def process_single_question(
     # Load video frames (with caching)
     if video_path not in video_cache:
         try:
+            # Extract frames using both methods
+            yolo_pixel_values = None
+            yolo_num_patches_list = None
             frame_indices = None
             detections_dict = None
 
-            # Try YOLO-based frame selection with detection context
-            if use_yolo and yolo_model_path:
+            # Method 1: YOLO-based frame selection
+            yolo_succeeded = False
+            if use_yolo and yolo_model_path and num_frames_yolo > 0:
                 frame_indices, detections_dict = find_best_frames_with_context(
                     full_video_path,
                     yolo_model_path,
-                    top_k=num_frames,
+                    top_k=num_frames_yolo,
                     device=device
                 )
 
-            # Load frames
-            if frame_indices is not None and len(frame_indices) > 0:
-                print(f"  [Video] Using YOLO-selected frames: {frame_indices}")
-                pixel_values, num_patches_list = load_video_from_indices(
+                if frame_indices is not None and len(frame_indices) > 0:
+                    print(f"  [Video] YOLO-selected frames: {frame_indices}")
+                    yolo_pixel_values, yolo_num_patches_list = load_video_from_indices(
+                        full_video_path,
+                        frame_indices,
+                        input_size=448,
+                        max_num=max_num
+                    )
+                    yolo_succeeded = True
+                else:
+                    print(f"  [WARNING] YOLO detection found no frames, compensating with uniform sampling")
+
+            # Method 2: Uniform sampling (with compensation if YOLO failed)
+            normal_pixel_values = None
+            normal_num_patches_list = None
+
+            # Calculate uniform frame count: add YOLO frames if YOLO failed
+            uniform_frame_count = num_frames_normal
+            if use_yolo and yolo_model_path and num_frames_yolo > 0 and not yolo_succeeded:
+                uniform_frame_count += num_frames_yolo
+                print(f"  [Video] Compensating for YOLO failure: {num_frames_normal} + {num_frames_yolo} = {uniform_frame_count} uniform frames")
+
+            if uniform_frame_count > 0:
+                if yolo_succeeded:
+                    print(f"  [Video] Uniform sampling: {uniform_frame_count} frames")
+                normal_pixel_values, normal_num_patches_list = load_video(
                     full_video_path,
-                    frame_indices,
+                    num_segments=uniform_frame_count,
                     input_size=448,
                     max_num=max_num
                 )
-            else:
-                # Fallback to uniform sampling
-                print(f"  [Video] Using uniform sampling ({num_frames} frames)")
-                pixel_values, num_patches_list = load_video(
-                    full_video_path,
-                    num_segments=num_frames,
-                    input_size=448,
-                    max_num=max_num
-                )
+
+            # Concatenate frames from both methods
+            if yolo_pixel_values is not None and normal_pixel_values is not None:
+                # Both methods succeeded - concatenate
+                pixel_values = torch.cat([yolo_pixel_values, normal_pixel_values], dim=0)
+                num_patches_list = yolo_num_patches_list + normal_num_patches_list
+                strategy = 'yolo_and_uniform'
+                print(f"  [Video] Combined: {len(yolo_num_patches_list)} YOLO + {len(normal_num_patches_list)} normal = {len(num_patches_list)} total frames")
+            elif yolo_pixel_values is not None:
+                # Only YOLO succeeded
+                pixel_values = yolo_pixel_values
+                num_patches_list = yolo_num_patches_list
+                strategy = 'yolo_only'
+                print(f"  [Video] Using only YOLO frames: {len(num_patches_list)} frames")
+            elif normal_pixel_values is not None:
+                # Only normal succeeded
+                pixel_values = normal_pixel_values
+                num_patches_list = normal_num_patches_list
+                strategy = 'uniform_only'
                 frame_indices = None
                 detections_dict = None
-
-            # Determine strategy used
-            if frame_indices is not None and detections_dict is not None:
-                strategy = 'yolo_detection'
+                print(f"  [Video] Using only uniform frames: {len(num_patches_list)} frames")
             else:
-                strategy = 'uniform_sampling'
+                # Neither method succeeded
+                raise Exception(f"Both YOLO and uniform sampling failed for {video_path}")
 
             # Cache on CPU
             video_cache[video_path] = {
@@ -394,8 +430,10 @@ def main():
                         help='Number of samples to process (default: all)')
 
     # Video processing arguments
-    parser.add_argument('--num_frames', type=int, default=8,
-                        help='Number of frames to extract per video')
+    parser.add_argument('--num_frames_yolo', type=int, default=8,
+                        help='Number of frames to extract when using YOLO selection')
+    parser.add_argument('--num_frames_normal', type=int, default=8,
+                        help='Number of frames to extract when using uniform sampling')
     parser.add_argument('--max_num', type=int, default=3,
                         help='Maximum number of patches per frame')
     parser.add_argument('--yolo_model', type=str, default=None,
@@ -414,14 +452,20 @@ def main():
     print("="*80)
     print(f"Model: {args.model}")
     print(f"8-bit quantization: {args.load_in_8bit}")
-    print(f"Frames per video: {args.num_frames}")
-    print(f"Max patches per frame: {args.max_num}")
-    print(f"YOLO frame selection: {not args.no_yolo}")
+    print(f"\nFrame Extraction Strategy:")
+    if not args.no_yolo and args.yolo_model:
+        print(f"  - YOLO frames: {args.num_frames_yolo}")
+    else:
+        print(f"  - YOLO frames: 0 (disabled)")
+    print(f"  - Uniform frames: {args.num_frames_normal}")
+    total_frames = (args.num_frames_yolo if (not args.no_yolo and args.yolo_model) else 0) + args.num_frames_normal
+    print(f"  - Total frames per video: {total_frames}")
+    print(f"\nMax patches per frame: {args.max_num}")
     if not args.no_yolo:
         if args.yolo_model:
             print(f"YOLO model: {args.yolo_model}")
         else:
-            print("[WARNING] YOLO enabled but no model path provided. Will use uniform sampling.")
+            print("[WARNING] YOLO enabled but no model path provided. Will only use uniform sampling.")
     print("="*80)
 
     # Check CUDA availability
@@ -462,7 +506,8 @@ def main():
             tokenizer=tokenizer,
             video_cache=video_cache,
             base_path=args.data_path,
-            num_frames=args.num_frames,
+            num_frames_yolo=args.num_frames_yolo,
+            num_frames_normal=args.num_frames_normal,
             max_num=args.max_num,
             use_yolo=not args.no_yolo,
             yolo_model_path=args.yolo_model,
