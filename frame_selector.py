@@ -77,16 +77,55 @@ VIETNAMESE_SIGN_CLASSES = {
 }
 
 
+def get_location_description(bbox: List[float], frame_width: int = 896, frame_height: int = 448) -> str:
+    """
+    Convert bounding box coordinates to Vietnamese location description.
+
+    Designed for 896x448 frames (16:9 aspect ratio) split into 2x1 grid:
+    - Left patch: 0-448px
+    - Right patch: 448-896px
+
+    Args:
+        bbox: Bounding box as [x1, y1, x2, y2]
+        frame_width: Frame width in pixels (default: 896 for 2x1 grid)
+        frame_height: Frame height in pixels (default: 448)
+
+    Returns:
+        Vietnamese location description (e.g., "bên trái, phía trên")
+    """
+    x1, y1, x2, y2 = bbox
+
+    # Calculate bbox center
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+
+    # Horizontal position (left vs right patch)
+    if center_x < frame_width / 2:  # 0-448px
+        horizontal = "bên trái"
+    else:  # 448-896px
+        horizontal = "bên phải"
+
+    # Vertical position (top, middle, bottom)
+    if center_y < frame_height * 0.33:
+        vertical = "phía trên"
+    elif center_y < frame_height * 0.67:
+        vertical = "giữa"
+    else:
+        vertical = "phía dưới"
+
+    return f"{horizontal}, {vertical}"
+
+
 def find_best_frames_with_context(
     video_path: str,
     yolo_model_path: str,
     top_k: int = TOP_K_FRAMES,
     device: str = 'cuda',
     confidence: float = YOLO_CONFIDENCE
-) -> Optional[Tuple[List[int], Dict[int, List[str]]]]:
+) -> Optional[Tuple[List[int], Dict[int, List[Dict[str, any]]]]]:
     """
     Analyze video to find the top_k best frames containing Vietnamese traffic signs.
-    Returns frame indices AND detected sign class names for each frame.
+    Returns frame indices AND full detection info (sign names, bboxes, locations) for each frame.
 
     Process:
     1. (Stage 1) Super-fast Filtering: Scan through video, find clear frames
@@ -104,7 +143,9 @@ def find_best_frames_with_context(
     Returns:
         Tuple of (frame_indices, detections_dict) where:
         - frame_indices: List of top_k frame indices
-        - detections_dict: Dict mapping frame_index -> List of detected sign names
+        - detections_dict: Dict mapping frame_index -> List of detection objects
+          Each detection object contains: {'sign_name': str, 'bbox': [x1,y1,x2,y2],
+                                           'confidence': float, 'location': str}
         Returns (None, None) if no suitable frames are found.
     """
 
@@ -135,6 +176,11 @@ def find_best_frames_with_context(
     if not cap.isOpened():
         print(f"[Frame Selector] Error: Cannot open video file: {video_path}")
         return (None, None)
+
+    # Get actual video dimensions (YOLO runs on original frames, not 896x448)
+    original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"[Frame Selector] Video resolution: {original_width}x{original_height}")
 
     frame_index = 0
     candidates = []  # List to store candidates
@@ -190,7 +236,7 @@ def find_best_frames_with_context(
 
     # Calculate TOTAL sign area per frame (sum all signs)
     frame_total_area = defaultdict(float)
-    frame_detections = defaultdict(set)  # Use set to avoid duplicates
+    frame_detections = defaultdict(list)  # Changed from set to list to store full detection objects
 
     for cand in candidates:
         box = cand['box']
@@ -203,9 +249,18 @@ def find_best_frames_with_context(
         # Sum total area for this frame
         frame_total_area[idx] += area
 
-        # Store detected sign class name
+        # Store full detection object with bbox and location
         if class_id in VIETNAMESE_SIGN_CLASSES:
-            frame_detections[idx].add(VIETNAMESE_SIGN_CLASSES[class_id])
+            sign_name = VIETNAMESE_SIGN_CLASSES[class_id]
+            bbox = box.tolist()  # Convert numpy array to list
+            location = get_location_description(bbox, original_width, original_height)
+
+            frame_detections[idx].append({
+                'sign_name': sign_name,
+                'bbox': bbox,
+                'confidence': cand['confidence'],
+                'location': location
+            })
 
     # Sort frames by total area (largest first)
     sorted_frames = sorted(frame_total_area.items(), key=lambda item: item[1], reverse=True)
@@ -213,9 +268,9 @@ def find_best_frames_with_context(
     # Get Top-K frame indices
     best_frame_indices = [idx for idx, area in sorted_frames[:top_k]]
 
-    # Convert detections to dict with lists
+    # Convert detections to dict with full detection objects
     detections_dict = {
-        idx: sorted(list(frame_detections[idx]))
+        idx: frame_detections[idx]
         for idx in best_frame_indices
     }
 
@@ -224,10 +279,14 @@ def find_best_frames_with_context(
     print(f"[Frame Selector] Total processing time: {end_time_step2 - start_time:.2f} seconds")
     print(f"[Frame Selector] Top {top_k} frames: {best_frame_indices}")
 
-    # Print detected signs for each frame
+    # Print detected signs with locations for each frame
     for idx in best_frame_indices:
-        signs = detections_dict[idx]
-        print(f"  Frame {idx}: {len(signs)} sign(s) - {', '.join(signs[:3])}{'...' if len(signs) > 3 else ''}")
+        detections = detections_dict[idx]
+        print(f"  Frame {idx}: {len(detections)} sign(s) detected")
+        for detection in detections[:3]:  # Show first 3
+            print(f"    - {detection['sign_name']} ở {detection['location']}")
+        if len(detections) > 3:
+            print(f"    ... and {len(detections) - 3} more")
 
     return (best_frame_indices, detections_dict)
 

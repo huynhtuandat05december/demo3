@@ -113,15 +113,17 @@ def load_model(model_name: str, load_in_8bit: bool = False, device: str = 'cuda'
 
 def create_video_prefix(num_frames: int) -> str:
     """
-    Create video frame prefix for prompt.
+    Create video frame prefix for prompt with 2x1 grid explanation.
 
     Args:
         num_frames: Number of frames in the video
 
     Returns:
-        Formatted prefix string
+        Formatted prefix string with grid context
     """
-    return ''.join([f'Frame{i+1}: <image>\n' for i in range(num_frames)])
+    header = "Mỗi khung hình video được hiển thị dưới dạng hình ảnh toàn cảnh (chiều rộng đầy đủ).\n\n"
+    frames = ''.join([f'Khung hình {i+1}: <image>\n' for i in range(num_frames)])
+    return header + frames
 
 
 def process_single_question(
