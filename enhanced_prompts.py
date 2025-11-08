@@ -121,6 +121,29 @@ C. Tiếp tục đi với tốc độ bình thường
 D. Rẽ phải để tránh đèn đỏ
 Phân tích: Bước 1: Quan sát thay đổi - đèn XAnh → VÀNG (sắp đổi đỏ). Bước 2: Luật giao thông - đèn vàng là tín hiệu CẨN TRỌNG, chuẩn bị DỪNG. Bước 3: Hành động đúng là dừng trước vạch.
 Đáp án: B
+""",
+
+    'lane_sign_mapping': """
+Ví dụ về Quan Hệ Làn Đường - Biển Báo:
+Câu hỏi: Có 3 làn đường. Biển "Đường Lê Lợi" ở phía trên làn trái, biển "Cầu Rạch Chiếc" ở phía trên làn phải. Xe đang ở làn trái. Muốn đi Cầu Rạch Chiếc thì phải làm gì?
+A. Đi thẳng (đang ở làn đúng)
+B. Chuyển sang làn phải
+C. Chuyển sang làn giữa
+D. Không thể đi Cầu Rạch Chiếc
+Phân tích: Bước 1: XÁC ĐỊNH vị trí xe - đang ở LÀN TRÁI. Bước 2: ĐỌC biển ở trên làn trái - "Đường Lê Lợi" → làn trái đi vào Đường Lê Lợi. Bước 3: ĐỌC biển ở trên làn phải - "Cầu Rạch Chiếc" → làn phải đi vào Cầu Rạch Chiếc. Bước 4: Muốn đi Cầu Rạch Chiếc → PHẢI CHUYỂN sang làn phải.
+Đáp án: B
+""",
+
+    'multi_lane_signs': """
+Ví dụ về Đọc Biển Theo Từng Làn:
+Câu hỏi: Theo biển báo, xe đang ở làn giữa sẽ đi đến đường nào?
+(Giả sử: Biển trên làn trái ghi "Trần Hưng Đạo", biển trên làn giữa ghi "Nguyễn Huệ", biển trên làn phải ghi "Lê Lợi")
+A. Trần Hưng Đạo
+B. Nguyễn Huệ
+C. Lê Lợi
+D. Cả ba đường
+Phân tích: Bước 1: XÁC ĐỊNH - xe ở LÀN GIỮA. Bước 2: ĐỌC biển ở PHÍA TRÊN làn giữa - ghi "Nguyễn Huệ". Bước 3: NGUYÊN TẮC - biển ở trên làn nào → làn đó đi đến đường trên biển. Bước 4: Xe ở làn giữa → đi vào đường "Nguyễn Huệ".
+Đáp án: B
 """
 }
 
@@ -139,9 +162,20 @@ def select_relevant_examples(question: str, max_examples: int = 2) -> str:
     question_lower = question.lower()
     examples = []
 
+    # Priority 0: Lane-sign mapping (HIGHEST - critical for understanding which lane goes to which street)
+    if any(kw in question_lower for kw in ['làn trái', 'làn phải', 'làn giữa', 'đang ở làn', 'chuyển làn']):
+        if any(kw in question_lower for kw in ['đường', 'cầu', 'tên đường', 'đến', 'đi vào', 'muốn đi']):
+            examples.append(FEW_SHOT_EXAMPLES['lane_sign_mapping'])
+
+    # If question asks about which street based on current lane
+    if any(kw in question_lower for kw in ['xe đang ở làn', 'theo biển', 'làn nào']) and any(kw in question_lower for kw in ['đi đến', 'sẽ đi', 'đường nào']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['multi_lane_signs'])
+
     # Priority 1: Lane arrow questions (NEW - critical for road markings)
     if any(kw in question_lower for kw in ['mũi tên', 'làn', 'lane', 'arrow', 'vạch kẻ']):
-        examples.append(FEW_SHOT_EXAMPLES['lane_arrow'])
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['lane_arrow'])
 
     # Priority 2: Spatial positioning questions (NEW - which lane, position)
     if any(kw in question_lower for kw in ['làn nào', 'làn đường', 'vị trí', 'chuyển làn', 'làn trái', 'làn phải', 'làn giữa']):
@@ -240,11 +274,20 @@ def create_enhanced_prompt_with_few_shot(
                     ocr = det.get('ocr_text', '')
                     conf = det.get('ocr_confidence', 0.0)
 
-                    # Make OCR text more prominent by putting it first if available
+                    # Make OCR text more prominent and emphasize lane-sign mapping
+                    # Convert location to lane indication
+                    lane_info = ""
+                    if "trái" in loc or "left" in loc.lower():
+                        lane_info = " → LÀN TRÁI"
+                    elif "phải" in loc or "right" in loc.lower():
+                        lane_info = " → LÀN PHẢI"
+                    elif "giữa" in loc or "center" in loc.lower() or "middle" in loc.lower():
+                        lane_info = " → LÀN GIỮA"
+
                     if ocr and conf >= 0.6:
-                        line = f"  • Khung {i+1}: {sign} ({loc}) - NỘI DUNG: \"{ocr}\""
+                        line = f"  • Khung {i+1}: {sign} ({loc}{lane_info}) - NỘI DUNG: \"{ocr}\""
                     else:
-                        line = f"  • Khung {i+1}: {sign} ({loc})"
+                        line = f"  • Khung {i+1}: {sign} ({loc}{lane_info})"
                         if ocr:
                             # OCR text exists but confidence is too low
                             print(f"  [Prompt] ⚠ Skipping low-confidence OCR for '{sign}': '{ocr}' (conf: {conf:.2f} < 0.6)")
@@ -291,15 +334,16 @@ Câu hỏi: {question}
 Các lựa chọn:
 {choices_text}
 
-Hãy phân tích theo 5 BƯỚC (quan sát TẤT CẢ các yếu tố):
-1. ĐỌC văn bản (biển báo) VÀ mũi tên (trên đường)
-2. XÁC ĐỊNH vị trí xe, số làn đường, loại đường
-3. QUAN SÁT phương tiện (loại, vị trí, hành động), vạch kẻ đường
-4. PHÂN TÍCH đèn tín hiệu, thời gian, thay đổi trong video
-5. ÁP DỤNG luật giao thông Việt Nam và chọn đáp án chính xác
+Hãy phân tích theo 6 BƯỚC (CHÚ Ý QUAN HỆ LÀN-BIỂN):
+1. XÁC ĐỊNH xe đang ở làn nào (trái/giữa/phải) - QUAN TRỌNG!
+2. XÁC ĐỊNH biển chỉ đường ở phía trên làn nào (trái/giữa/phải)
+3. ĐỌC nội dung biển Ở ĐÚNG LÀN (biển trên làn X → làn X đi đường đó)
+4. ĐỌC mũi tên trên mặt đường của từng làn
+5. QUAN SÁT phương tiện, vạch kẻ, đèn tín hiệu, thay đổi trong video
+6. ÁP DỤNG luật giao thông Việt Nam và chọn đáp án chính xác
 
 Trả lời:
-Phân tích: [Nêu rõ các yếu tố quan trọng đã quan sát, sau đó giải thích]
+Phân tích: [Nêu vị trí làn, biển áp dụng cho làn nào, rồi giải thích]
 Đáp án: [Chữ cái A/B/C/D]"""
 
     return prompt

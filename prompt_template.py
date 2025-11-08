@@ -31,9 +31,12 @@ def create_traffic_prompt(question: str, choices: list[str]) -> str:
    - Mũi tên kết hợp: ví dụ (←↑) = được rẽ trái HOẶC đi thẳng
    - Xác định mũi tên thuộc làn đường nào
 
-3. XÁC ĐỊNH VỊ TRÍ và LÀN ĐƯỜNG:
+3. XÁC ĐỊNH VỊ TRÍ và QUAN HỆ LÀN-BIỂN:
    - Xe đang ở làn nào (làn trái/giữa/phải)?
    - Tổng số làn đường (đếm từ trái sang phải)
+   - QUAN TRỌNG: Biển chỉ đường ở phía trên làn nào?
+   - Mỗi biển chỉ đường áp dụng cho làn NGAY BÊN DƯỚI nó
+   - Ví dụ: Biển "Đường A" ở trên làn trái → Làn trái đi vào Đường A
    - Loại đường: 1 chiều hay 2 chiều, đường phố hay cao tốc
    - Khoảng cách đến giao lộ/biển báo
 
@@ -59,6 +62,14 @@ def create_traffic_prompt(question: str, choices: list[str]) -> str:
    - Thứ tự các sự kiện (trước/sau/trong lúc)
    - Thay đổi: đèn tín hiệu, vị trí xe, giao thông
    - Môi trường: thời tiết, ánh sáng, điều kiện đường
+
+8. MAPPING LÀN ĐƯỜNG - BIỂN BÁO (CỰC KỲ QUAN TRỌNG):
+   - Xác định biển chỉ đường nằm ở vị trí nào (bên trái/giữa/phải)
+   - Biển ở TRÊN làn nào → áp dụng cho làn ĐÓ
+   - Nếu xe ở làn trái, chỉ xem biển ở phía trên làn trái
+   - Nếu xe ở làn phải, chỉ xem biển ở phía trên làn phải
+   - ĐỌC biển đúng làn để biết đường mà làn đó dẫn đến
+   - Muốn đi đường khác → phải chuyển sang làn có biển đường đó
 
 Câu hỏi: {question}
 
@@ -128,11 +139,20 @@ def create_traffic_prompt_with_context(
                     ocr_text = detection.get('ocr_text')
                     ocr_conf = detection.get('ocr_confidence', 0.0)
 
-                    # Make OCR text more prominent by putting it first if available
+                    # Make OCR text more prominent and emphasize lane-sign mapping
+                    # Convert location to lane indication
+                    lane_info = ""
+                    if "trái" in location or "left" in location.lower():
+                        lane_info = " (áp dụng cho LÀN TRÁI)"
+                    elif "phải" in location or "right" in location.lower():
+                        lane_info = " (áp dụng cho LÀN PHẢI)"
+                    elif "giữa" in location or "center" in location.lower() or "middle" in location.lower():
+                        lane_info = " (áp dụng cho LÀN GIỮA)"
+
                     if ocr_text and ocr_conf >= 0.6:
-                        line = f"Khung hình {i+1}: Biển '{sign_name}' ở {location} - NỘI DUNG: \"{ocr_text}\""
+                        line = f"Khung hình {i+1}: Biển '{sign_name}' ở {location}{lane_info} - NỘI DUNG: \"{ocr_text}\""
                     else:
-                        line = f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}"
+                        line = f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}{lane_info}"
                     detection_lines.append(line)
             else:
                 detection_lines.append(f"Khung hình {i+1}: Không phát hiện biển báo")
@@ -153,9 +173,12 @@ def create_traffic_prompt_with_context(
    - Mũi tên kết hợp: ví dụ (←↑) = được rẽ trái HOẶC đi thẳng
    - Xác định mũi tên thuộc làn đường nào
 
-3. XÁC ĐỊNH VỊ TRÍ và LÀN ĐƯỜNG:
+3. XÁC ĐỊNH VỊ TRÍ và QUAN HỆ LÀN-BIỂN:
    - Xe đang ở làn nào (làn trái/giữa/phải)?
    - Tổng số làn đường (đếm từ trái sang phải)
+   - QUAN TRỌNG: Biển chỉ đường ở phía trên làn nào?
+   - Mỗi biển chỉ đường áp dụng cho làn NGAY BÊN DƯỚI nó
+   - Ví dụ: Biển "Đường A" ở trên làn trái → Làn trái đi vào Đường A
    - Loại đường: 1 chiều hay 2 chiều, đường phố hay cao tốc
    - Khoảng cách đến giao lộ/biển báo
 
