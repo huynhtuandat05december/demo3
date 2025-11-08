@@ -549,7 +549,7 @@ def main():
         print("\n[OCR] Initializing OCR engine for Vietnamese text extraction...")
         print(f"[OCR] Confidence threshold: {args.ocr_confidence}")
         try:
-            ocr_extractor = SignTextExtractor(use_paddleocr=True)
+            ocr_extractor = SignTextExtractor()
             if ocr_extractor.ocr is not None:
                 print("[OCR] OCR engine initialized successfully")
             else:
