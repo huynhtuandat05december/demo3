@@ -22,6 +22,8 @@ from tqdm import tqdm
 from model_utils import load_video, load_video_from_indices, load_video_from_indices_with_context, split_model, load_video_force_2x1_grid, load_video_from_indices_2x1_grid
 from prompt_template import create_traffic_prompt, create_traffic_prompt_with_context, format_video_prefix_with_detections
 from frame_selector import find_best_frames_with_context
+from ocr_enhancement import SignTextExtractor
+from enhanced_prompts import create_enhanced_prompt_with_few_shot, get_optimal_frame_counts
 
 warnings.filterwarnings('ignore')
 
@@ -137,7 +139,9 @@ def process_single_question(
     max_num: int,
     use_yolo: bool = True,
     yolo_model_path: Optional[str] = None,
-    device: str = 'cuda'
+    device: str = 'cuda',
+    ocr_extractor: Optional[SignTextExtractor] = None,
+    ocr_confidence: float = 0.6
 ) -> Dict:
     """
     Process a single question with detection-aware processing.
@@ -162,6 +166,17 @@ def process_single_question(
     question_text = question_data['question']
     choices = question_data['choices']
     video_path = question_data['video_path']
+    num_choices = len(choices)
+
+    # Adaptive frame selection based on question type
+    adaptive_yolo, adaptive_uniform = get_optimal_frame_counts(
+        question_text,
+        default_yolo=num_frames_yolo,
+        default_uniform=num_frames_normal
+    )
+    # Use adaptive counts
+    num_frames_yolo_adaptive = adaptive_yolo
+    num_frames_normal_adaptive = adaptive_uniform
 
     # Get full video path
     full_video_path = os.path.join(base_path, video_path)
@@ -187,13 +202,13 @@ def process_single_question(
             frame_indices = None
             detections_dict = None
 
-            # Method 1: YOLO-based frame selection with 2x1 grid
+            # Method 1: YOLO-based frame selection with 2x1 grid (using adaptive count)
             yolo_succeeded = False
-            if use_yolo and yolo_model_path and num_frames_yolo > 0:
+            if use_yolo and yolo_model_path and num_frames_yolo_adaptive > 0:
                 frame_indices, detections_dict = find_best_frames_with_context(
                     full_video_path,
                     yolo_model_path,
-                    top_k=num_frames_yolo,
+                    top_k=num_frames_yolo_adaptive,
                     device=device
                 )
 
@@ -208,16 +223,16 @@ def process_single_question(
                 else:
                     print(f"  [WARNING] YOLO detection found no frames, compensating with uniform sampling")
 
-            # Method 2: Uniform sampling with 2x1 grid (with compensation if YOLO failed)
+            # Method 2: Uniform sampling with 2x1 grid (with compensation if YOLO failed, using adaptive count)
             normal_pixel_values = None
             normal_num_patches_list = None
             normal_pil_images = None
 
             # Calculate uniform frame count: add YOLO frames if YOLO failed
-            uniform_frame_count = num_frames_normal
-            if use_yolo and yolo_model_path and num_frames_yolo > 0 and not yolo_succeeded:
-                uniform_frame_count += num_frames_yolo
-                print(f"  [Video] Compensating for YOLO failure: {num_frames_normal} + {num_frames_yolo} = {uniform_frame_count} uniform frames")
+            uniform_frame_count = num_frames_normal_adaptive
+            if use_yolo and yolo_model_path and num_frames_yolo_adaptive > 0 and not yolo_succeeded:
+                uniform_frame_count += num_frames_yolo_adaptive
+                print(f"  [Video] Compensating for YOLO failure: {num_frames_normal_adaptive} + {num_frames_yolo_adaptive} = {uniform_frame_count} uniform frames")
 
             if uniform_frame_count > 0:
                 if yolo_succeeded:
@@ -286,30 +301,55 @@ def process_single_question(
     frame_indices = cached_data.get('frame_indices')
     detections_dict = cached_data.get('detections_dict')
     strategy = cached_data.get('strategy', 'uniform_sampling')
+    pil_images = cached_data.get('pil_images', [])
 
-    # Create prompt with detection context if available
-    if detections_dict and frame_indices:
-        video_prefix = format_video_prefix_with_detections(
-            actual_num_frames,
-            detections_dict,
-            frame_indices
-        )
-        prompt_text = create_traffic_prompt_with_context(
-            question_text,
-            choices,
-            detections_dict,
-            frame_indices
-        )
-    else:
-        video_prefix = create_video_prefix(actual_num_frames)
-        prompt_text = create_traffic_prompt(question_text, choices)
+    # Add OCR text extraction to detections if OCR is available
+    if ocr_extractor and detections_dict and frame_indices and pil_images:
+        print(f"  [OCR] Extracting text from {len(frame_indices)} frames with detections...")
+        # Convert PIL images to numpy arrays for OCR
+        import numpy as np
+        from PIL import Image
+
+        video_frames = []
+        for pil_img in pil_images:
+            if isinstance(pil_img, Image.Image):
+                # Convert PIL to numpy (RGB -> BGR for cv2 compatibility)
+                img_array = np.array(pil_img)
+                if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                    img_array = img_array[:, :, ::-1]  # RGB -> BGR
+                video_frames.append(img_array)
+
+        if len(video_frames) > 0:
+            # Enhance detections with OCR
+            detections_dict = ocr_extractor.batch_enhance_detections(
+                video_frames,
+                frame_indices,
+                detections_dict,
+                confidence_threshold=ocr_confidence
+            )
+
+    # Create prompt with enhanced few-shot examples and detection context
+    video_prefix = format_video_prefix_with_detections(
+        actual_num_frames,
+        detections_dict,
+        frame_indices
+    ) if (detections_dict and frame_indices) else create_video_prefix(actual_num_frames)
+
+    # Use enhanced prompt with few-shot examples
+    prompt_text = create_enhanced_prompt_with_few_shot(
+        question_text,
+        choices,
+        detections_dict=detections_dict,
+        frame_indices=frame_indices,
+        num_choices=num_choices
+    )
 
     full_question = video_prefix + prompt_text
 
     # Generate response
     try:
         generation_config = {
-            'max_new_tokens': 10,
+            'max_new_tokens': 256,  # Increased from 10 to allow chain-of-thought reasoning
             'do_sample': False,
         }
 
@@ -447,6 +487,12 @@ def main():
     parser.add_argument('--no_yolo', action='store_true',
                         help='Disable YOLO frame selection, use uniform sampling only')
 
+    # OCR arguments
+    parser.add_argument('--use_ocr', action='store_true',
+                        help='Enable OCR text extraction from traffic signs (requires paddleocr)')
+    parser.add_argument('--ocr_confidence', type=float, default=0.6,
+                        help='Minimum OCR confidence threshold (default: 0.6)')
+
     # Output arguments
     parser.add_argument('--output_dir', type=str, default='./output',
                         help='Directory to save results')
@@ -481,6 +527,26 @@ def main():
 
     # Load model
     model, tokenizer = load_model(args.model, args.load_in_8bit, device)
+
+    # Initialize OCR extractor for Vietnamese traffic signs (if enabled)
+    ocr_extractor = None
+    if args.use_ocr:
+        print("\n[OCR] Initializing OCR engine for Vietnamese text extraction...")
+        print(f"[OCR] Confidence threshold: {args.ocr_confidence}")
+        try:
+            ocr_extractor = SignTextExtractor(use_paddleocr=True)
+            if ocr_extractor.ocr is not None:
+                print("[OCR] OCR engine initialized successfully")
+            else:
+                print("[OCR] OCR engine not available - will skip text extraction")
+                print("[OCR] Install with: pip install paddleocr")
+                ocr_extractor = None
+        except Exception as e:
+            print(f"[OCR] Failed to initialize OCR: {e}")
+            print("[OCR] Continuing without OCR...")
+            ocr_extractor = None
+    else:
+        print("\n[OCR] OCR disabled (use --use_ocr to enable)")
 
     # Load test data
     json_path = os.path.join(args.data_path, 'public_test/public_test.json')
@@ -517,7 +583,9 @@ def main():
             max_num=args.max_num,
             use_yolo=not args.no_yolo,
             yolo_model_path=args.yolo_model,
-            device=device
+            device=device,
+            ocr_extractor=ocr_extractor,
+            ocr_confidence=args.ocr_confidence
         )
         results.append(result)
 

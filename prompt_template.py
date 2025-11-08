@@ -86,11 +86,17 @@ def create_traffic_prompt_with_context(
         for i, frame_idx in enumerate(frame_indices):
             if frame_idx in detections_dict and detections_dict[frame_idx]:
                 detections = detections_dict[frame_idx]
-                # Format each detection with location
+                # Format each detection with location and OCR text if available
                 for detection in detections:
                     sign_name = detection['sign_name']
                     location = detection['location']
-                    detection_lines.append(f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}")
+                    ocr_text = detection.get('ocr_text')
+                    ocr_conf = detection.get('ocr_confidence', 0.0)
+
+                    line = f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}"
+                    if ocr_text and ocr_conf >= 0.6:
+                        line += f' [Nội dung: "{ocr_text}"]'
+                    detection_lines.append(line)
             else:
                 detection_lines.append(f"Khung hình {i+1}: Không phát hiện biển báo")
 
