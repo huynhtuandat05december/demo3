@@ -364,7 +364,7 @@ def process_single_question(
     # Generate response
     try:
         generation_config = {
-            'max_new_tokens': 256,  # Increased from 10 to allow chain-of-thought reasoning
+            'max_new_tokens': 512,  # Increased from 10 to allow chain-of-thought reasoning
             'do_sample': False,
         }
 
