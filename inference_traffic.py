@@ -234,21 +234,25 @@ def process_single_question(
                 uniform_frame_count += num_frames_yolo_adaptive
                 print(f"  [Video] Compensating for YOLO failure: {num_frames_normal_adaptive} + {num_frames_yolo_adaptive} = {uniform_frame_count} uniform frames")
 
+            uniform_frame_indices = None
             if uniform_frame_count > 0:
                 if yolo_succeeded:
                     print(f"  [Video] Uniform sampling: {uniform_frame_count} frames with 2x1 grid")
-                normal_pixel_values, normal_num_patches_list, normal_pil_images = load_video_force_2x1_grid(
+                normal_pixel_values, normal_num_patches_list, normal_pil_images, uniform_frame_indices = load_video_force_2x1_grid(
                     video_path=full_video_path,
                     num_segments=uniform_frame_count,
                     input_size=448
                 )
 
             # Concatenate frames from both methods
+            all_frame_indices = []
             if yolo_pixel_values is not None and normal_pixel_values is not None:
                 # Both methods succeeded - concatenate
                 pixel_values = torch.cat([yolo_pixel_values, normal_pixel_values], dim=0)
                 num_patches_list = yolo_num_patches_list + normal_num_patches_list
                 pil_images = yolo_pil_images + normal_pil_images
+                # Combine frame indices: YOLO indices + uniform indices
+                all_frame_indices = frame_indices + (uniform_frame_indices if uniform_frame_indices else [])
                 strategy = '2x1_grid_yolo_and_uniform'
                 print(f"  [Video] Combined: {len(yolo_num_patches_list)} YOLO + {len(normal_num_patches_list)} uniform = {len(num_patches_list)} total frames")
             elif yolo_pixel_values is not None:
@@ -256,6 +260,7 @@ def process_single_question(
                 pixel_values = yolo_pixel_values
                 num_patches_list = yolo_num_patches_list
                 pil_images = yolo_pil_images
+                all_frame_indices = frame_indices if frame_indices else []
                 strategy = '2x1_grid_yolo_only'
                 print(f"  [Video] Using only YOLO frames: {len(num_patches_list)} frames")
             elif normal_pixel_values is not None:
@@ -263,9 +268,9 @@ def process_single_question(
                 pixel_values = normal_pixel_values
                 num_patches_list = normal_num_patches_list
                 pil_images = normal_pil_images
+                all_frame_indices = uniform_frame_indices if uniform_frame_indices else []
                 strategy = '2x1_grid_uniform_only'
-                frame_indices = None
-                detections_dict = None
+                # Keep detections_dict as None for uniform-only case
                 print(f"  [Video] Using only uniform frames: {len(num_patches_list)} frames")
             else:
                 # Neither method succeeded
@@ -277,8 +282,9 @@ def process_single_question(
                 'num_patches_list': num_patches_list,
                 'num_frames': len(num_patches_list),
                 'pil_images': pil_images,  # Store for OCR integration
-                'frame_indices': frame_indices,
-                'detections_dict': detections_dict,
+                'all_frame_indices': all_frame_indices,  # All frames (YOLO + uniform)
+                'yolo_frame_indices': frame_indices,  # YOLO frames only (for detections)
+                'detections_dict': detections_dict,  # Only has YOLO detections
                 'strategy': strategy
             }
 
@@ -298,14 +304,15 @@ def process_single_question(
     pixel_values = cached_data['pixel_values'].to(torch.bfloat16).to(device)
     num_patches_list = cached_data['num_patches_list']
     actual_num_frames = cached_data['num_frames']
-    frame_indices = cached_data.get('frame_indices')
+    all_frame_indices = cached_data.get('all_frame_indices', [])
+    yolo_frame_indices = cached_data.get('yolo_frame_indices')
     detections_dict = cached_data.get('detections_dict')
     strategy = cached_data.get('strategy', 'uniform_sampling')
     pil_images = cached_data.get('pil_images', [])
 
-    # Add OCR text extraction to detections if OCR is available
-    if ocr_extractor and detections_dict and frame_indices and pil_images:
-        print(f"  [OCR] Extracting text from {len(frame_indices)} frames with detections...")
+    # Add OCR text extraction to ALL frames if OCR is available
+    if ocr_extractor and pil_images and len(all_frame_indices) > 0:
+        print(f"  [OCR] Extracting text from {len(all_frame_indices)} frames (YOLO + uniform)...")
         # Convert PIL images to numpy arrays for OCR
         import numpy as np
         from PIL import Image
@@ -320,27 +327,28 @@ def process_single_question(
                 video_frames.append(img_array)
 
         if len(video_frames) > 0:
-            # Enhance detections with OCR
+            # Enhance detections with OCR (processes ALL frames: YOLO + uniform)
             detections_dict = ocr_extractor.batch_enhance_detections(
                 video_frames,
-                frame_indices,
+                all_frame_indices,
                 detections_dict,
                 confidence_threshold=ocr_confidence
             )
 
     # Create prompt with enhanced few-shot examples and detection context
+    # Use all_frame_indices for detections (includes both YOLO and uniform frames after OCR)
     video_prefix = format_video_prefix_with_detections(
         actual_num_frames,
         detections_dict,
-        frame_indices
-    ) if (detections_dict and frame_indices) else create_video_prefix(actual_num_frames)
+        all_frame_indices
+    ) if (detections_dict and all_frame_indices) else create_video_prefix(actual_num_frames)
 
     # Use enhanced prompt with few-shot examples
     prompt_text = create_enhanced_prompt_with_few_shot(
         question_text,
         choices,
         detections_dict=detections_dict,
-        frame_indices=frame_indices,
+        frame_indices=all_frame_indices,
         num_choices=num_choices
     )
 

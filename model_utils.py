@@ -187,7 +187,7 @@ def load_video_force_2x1_grid(
     video_path: str,
     num_segments: int = 10,
     input_size: int = 448
-) -> Tuple[torch.Tensor, List[int], List[Image.Image]]:
+) -> Tuple[torch.Tensor, List[int], List[Image.Image], List[int]]:
     """
     Load video frames with fixed 2x1 grid preprocessing for 16:9 videos.
 
@@ -203,16 +203,18 @@ def load_video_force_2x1_grid(
         input_size: Base size for each patch (default: 448, creates 896x448 frames)
 
     Returns:
-        tuple: (pixel_values, num_patches_list, pil_images)
+        tuple: (pixel_values, num_patches_list, pil_images, frame_indices)
             - pixel_values: Tensor [num_segments*2, 3, 448, 448] of all patches
             - num_patches_list: List of 2's, one per frame [2, 2, 2, ...]
             - pil_images: List of PIL Images (896x448) for OCR processing
+            - frame_indices: List of actual frame indices sampled
 
     Example:
         For 10 frames:
         - pixel_values shape: [20, 3, 448, 448] (10 frames * 2 patches each)
         - num_patches_list: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
         - pil_images: 10 PIL Images at 896x448 resolution
+        - frame_indices: [15, 45, 75, ...] actual frame numbers
     """
     vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
     max_frame = len(vr) - 1
@@ -268,8 +270,9 @@ def load_video_force_2x1_grid(
     print(f"[2x1 Grid Loader] Loaded {len(pil_images_for_ocr)} frames from video")
     print(f"[2x1 Grid Loader] Created {pixel_values.shape[0]} patches ({len(pil_images_for_ocr)} frames × 2 patches)")
     print(f"[2x1 Grid Loader] Pixel values shape: {pixel_values.shape}")
+    print(f"[2x1 Grid Loader] Frame indices: {frame_indices}")
 
-    return pixel_values, num_patches_list, pil_images_for_ocr
+    return pixel_values, num_patches_list, pil_images_for_ocr, frame_indices
 
 
 def load_video_from_indices_2x1_grid(

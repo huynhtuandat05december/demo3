@@ -162,6 +162,75 @@ class SignTextExtractor:
             logger.warning(f"[OCR] Error during text extraction: {e}")
             return None, 0.0
 
+    def extract_text_from_full_frame(
+        self,
+        frame: np.ndarray,
+        confidence_threshold: float = 0.6
+    ) -> Tuple[Optional[str], float]:
+        """
+        Extract text from entire frame (for uniform frames without detections).
+
+        Args:
+            frame: Full video frame (H, W, 3) in BGR
+            confidence_threshold: Minimum OCR confidence to accept result
+
+        Returns:
+            (extracted_text, confidence) or (None, 0.0) if OCR disabled/failed
+        """
+        if self.ocr is None:
+            return None, 0.0
+
+        try:
+            # Preprocess entire frame
+            enhanced = self.preprocess_sign_region(frame)
+
+            # Run OCR on full frame
+            if self.use_paddleocr:
+                result = self.ocr.ocr(enhanced, cls=True)
+
+                if result and result[0]:
+                    texts = []
+                    confidences = []
+
+                    for line in result[0]:
+                        text = line[1][0]
+                        conf = line[1][1]
+
+                        if conf >= confidence_threshold:
+                            texts.append(text)
+                            confidences.append(conf)
+
+                    if texts:
+                        combined_text = ' '.join(texts)
+                        avg_confidence = sum(confidences) / len(confidences)
+                        return combined_text, avg_confidence
+            else:
+                # EasyOCR
+                result = self.ocr.readtext(enhanced)
+
+                if result:
+                    texts = []
+                    confidences = []
+
+                    for detection in result:
+                        text = detection[1]
+                        conf = detection[2]
+
+                        if conf >= confidence_threshold:
+                            texts.append(text)
+                            confidences.append(conf)
+
+                    if texts:
+                        combined_text = ' '.join(texts)
+                        avg_confidence = sum(confidences) / len(confidences)
+                        return combined_text, avg_confidence
+
+            return None, 0.0
+
+        except Exception as e:
+            logger.warning(f"[OCR] Error during full frame text extraction: {e}")
+            return None, 0.0
+
     def enhance_detections_with_ocr(
         self,
         frame: np.ndarray,
@@ -204,16 +273,17 @@ class SignTextExtractor:
         self,
         video_frames: List[np.ndarray],
         frame_indices: List[int],
-        detections_dict: Dict[int, List[Dict]],
+        detections_dict: Optional[Dict[int, List[Dict]]] = None,
         confidence_threshold: float = 0.6
     ) -> Dict[int, List[Dict]]:
         """
         Batch process multiple frames with detections.
+        Now handles frames without detections by running full-frame OCR.
 
         Args:
             video_frames: List of video frames
             frame_indices: List of frame indices
-            detections_dict: Dict mapping frame_idx -> list of detections
+            detections_dict: Dict mapping frame_idx -> list of detections (can be None)
             confidence_threshold: Minimum OCR confidence
 
         Returns:
@@ -221,18 +291,45 @@ class SignTextExtractor:
         """
         if self.ocr is None:
             logger.info("[OCR] OCR engine not available, skipping text extraction")
-            return detections_dict
+            return detections_dict if detections_dict else {}
+
+        # Initialize detections_dict if None
+        if detections_dict is None:
+            detections_dict = {}
 
         logger.info(f"[OCR] Processing {len(frame_indices)} frames for text extraction...")
 
         for i, frame_idx in enumerate(frame_indices):
+            frame = video_frames[i]
+
             if frame_idx in detections_dict and detections_dict[frame_idx]:
-                frame = video_frames[i]
+                # Frame has YOLO detections - run OCR on bounding boxes
                 detections_dict[frame_idx] = self.enhance_detections_with_ocr(
                     frame,
                     detections_dict[frame_idx],
                     confidence_threshold
                 )
+            else:
+                # Frame has no detections (uniform frame) - run full-frame OCR
+                ocr_text, ocr_conf = self.extract_text_from_full_frame(
+                    frame,
+                    confidence_threshold
+                )
+
+                # Create a pseudo-detection for uniform frames with OCR text
+                if ocr_text:
+                    detections_dict[frame_idx] = [{
+                        'sign_name': 'Full Frame Scan',
+                        'bbox': [0, 0, frame.shape[1], frame.shape[0]],  # Full frame bbox
+                        'confidence': 0.0,  # No YOLO detection
+                        'location': 'toàn bộ khung hình',
+                        'ocr_text': ocr_text,
+                        'ocr_confidence': ocr_conf
+                    }]
+                    logger.info(f"[OCR] Frame {frame_idx} (uniform): Found text '{ocr_text}' (conf: {ocr_conf:.2f})")
+                else:
+                    # No text found in uniform frame
+                    detections_dict[frame_idx] = []
 
         return detections_dict
 
