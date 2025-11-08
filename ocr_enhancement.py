@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 import logging
+from paddleocr import PaddleOCR
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
