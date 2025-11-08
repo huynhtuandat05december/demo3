@@ -129,6 +129,9 @@ def create_enhanced_prompt_with_few_shot(
                     line = f"  • Khung {i+1}: {sign} ({loc})"
                     if ocr and conf >= 0.6:
                         line += f' - Nội dung: "{ocr}"'
+                    elif ocr:
+                        # OCR text exists but confidence is too low
+                        print(f"  [Prompt] ⚠ Skipping low-confidence OCR for '{sign}': '{ocr}' (conf: {conf:.2f} < 0.6)")
                     detection_lines.append(line)
 
         if detection_lines:

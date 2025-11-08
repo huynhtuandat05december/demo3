@@ -14,17 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class SignTextExtractor:
-    """Extract Vietnamese text from traffic sign regions using OCR"""
+    """Extract Vietnamese text from traffic sign regions using PaddleOCR"""
 
-    def __init__(self, use_paddleocr: bool = True):
+    def __init__(self):
         """
-        Initialize OCR engine.
-
-        Args:
-            use_paddleocr: If True, use PaddleOCR (recommended for Vietnamese).
-                          If False, use EasyOCR as fallback.
+        Initialize PaddleOCR engine.
         """
-        self.use_paddleocr = use_paddleocr
         self.ocr = None
 
         try:
@@ -34,7 +29,7 @@ class SignTextExtractor:
                 use_textline_orientation=False
             )
         except ImportError as e:
-            logger.warning(f"[OCR] Failed to initialize: {e}")
+            logger.warning(f"[OCR] Failed to initialize PaddleOCR: {e}")
             logger.warning("[OCR] OCR will be disabled. Install with: pip install paddleocr")
             self.ocr = None
 
@@ -93,82 +88,55 @@ class SignTextExtractor:
         if self.ocr is None:
             return None, 0.0
 
-        try:
-            # Extract sign region with padding
-            x1, y1, x2, y2 = map(int, bbox)
+        # Extract sign region with padding
+        x1, y1, x2, y2 = map(int, bbox)
 
-            # Add padding (10% of bbox size)
-            padding_x = max(10, int((x2 - x1) * 0.1))
-            padding_y = max(10, int((y2 - y1) * 0.1))
+        # Add padding (10% of bbox size)
+        padding_x = max(10, int((x2 - x1) * 0.1))
+        padding_y = max(10, int((y2 - y1) * 0.1))
 
-            x1 = max(0, x1 - padding_x)
-            y1 = max(0, y1 - padding_y)
-            x2 = min(frame.shape[1], x2 + padding_x)
-            y2 = min(frame.shape[0], y2 + padding_y)
+        x1 = max(0, x1 - padding_x)
+        y1 = max(0, y1 - padding_y)
+        x2 = min(frame.shape[1], x2 + padding_x)
+        y2 = min(frame.shape[0], y2 + padding_y)
 
-            # Extract and validate
-            sign_patch = frame[y1:y2, x1:x2]
+        # Extract and validate
+        sign_patch = frame[y1:y2, x1:x2]
 
-            if sign_patch.size == 0 or sign_patch.shape[0] < 10 or sign_patch.shape[1] < 10:
-                return None, 0.0
-
-            # Preprocess
-            enhanced = self.preprocess_sign_region(sign_patch)
-
-            # Run OCR
-            if self.use_paddleocr:
-                result = self.ocr.ocr(enhanced)
-
-                if result and result[0]:
-                    texts = []
-                    confidences = []
-
-                    for line in result[0]:
-                        # Validate result structure before accessing indices
-                        if (len(line) > 1 and
-                            isinstance(line[1], (list, tuple)) and
-                            len(line[1]) >= 2):
-                            text = line[1][0]
-                            conf = line[1][1]
-
-                            if conf >= confidence_threshold:
-                                texts.append(text)
-                                confidences.append(conf)
-                        else:
-                            # Skip malformed OCR result
-                            logger.debug(f"[OCR] Skipping malformed result: {line}")
-                            continue
-
-                    if texts:
-                        combined_text = ' '.join(texts)
-                        avg_confidence = sum(confidences) / len(confidences)
-                        return combined_text, avg_confidence
-            else:
-                # EasyOCR
-                result = self.ocr.readtext(enhanced)
-
-                if result:
-                    texts = []
-                    confidences = []
-
-                    for detection in result:
-                        text = detection[1]
-                        conf = detection[2]
-
-                        if conf >= confidence_threshold:
-                            texts.append(text)
-                            confidences.append(conf)
-
-                    if texts:
-                        combined_text = ' '.join(texts)
-                        avg_confidence = sum(confidences) / len(confidences)
-                        return combined_text, avg_confidence
-
+        if sign_patch.size == 0 or sign_patch.shape[0] < 10 or sign_patch.shape[1] < 10:
             return None, 0.0
 
-        except Exception as e:
-            logger.warning(f"[OCR] Error during text extraction: {e}")
-            return None, 0.0
+        # Preprocess
+        enhanced = self.preprocess_sign_region(sign_patch)
+
+        # Run PaddleOCR
+        result = self.ocr.ocr(enhanced)
+
+        if result and result[0]:
+            texts = []
+            confidences = []
+
+            for line in result[0]:
+                # Validate result structure before accessing indices
+                if (len(line) > 1 and
+                    isinstance(line[1], (list, tuple)) and
+                    len(line[1]) >= 2):
+                    text = line[1][0]
+                    conf = line[1][1]
+
+                    if conf >= confidence_threshold:
+                        texts.append(text)
+                        confidences.append(conf)
+                else:
+                    # Malformed OCR result - raise error instead of skipping
+                    raise ValueError(f"[OCR] Malformed PaddleOCR result structure: {line}")
+
+            if texts:
+                combined_text = ' '.join(texts)
+                avg_confidence = sum(confidences) / len(confidences)
+                return combined_text, avg_confidence
+
+        return None, 0.0
 
     def extract_text_from_full_frame(
         self,
@@ -188,64 +156,37 @@ class SignTextExtractor:
         if self.ocr is None:
             return None, 0.0
 
-        try:
-            # Preprocess entire frame
-            enhanced = self.preprocess_sign_region(frame)
+        # Preprocess entire frame
+        enhanced = self.preprocess_sign_region(frame)
 
-            # Run OCR on full frame
-            if self.use_paddleocr:
-                result = self.ocr.ocr(enhanced)
+        # Run PaddleOCR on full frame
+        result = self.ocr.ocr(enhanced)
 
-                if result and result[0]:
-                    texts = []
-                    confidences = []
+        if result and result[0]:
+            texts = []
+            confidences = []
 
-                    for line in result[0]:
-                        # Validate result structure before accessing indices
-                        if (len(line) > 1 and
-                            isinstance(line[1], (list, tuple)) and
-                            len(line[1]) >= 2):
-                            text = line[1][0]
-                            conf = line[1][1]
+            for line in result[0]:
+                # Validate result structure before accessing indices
+                if (len(line) > 1 and
+                    isinstance(line[1], (list, tuple)) and
+                    len(line[1]) >= 2):
+                    text = line[1][0]
+                    conf = line[1][1]
 
-                            if conf >= confidence_threshold:
-                                texts.append(text)
-                                confidences.append(conf)
-                        else:
-                            # Skip malformed OCR result
-                            logger.debug(f"[OCR] Skipping malformed result: {line}")
-                            continue
+                    if conf >= confidence_threshold:
+                        texts.append(text)
+                        confidences.append(conf)
+                else:
+                    # Malformed OCR result - raise error instead of skipping
+                    raise ValueError(f"[OCR] Malformed PaddleOCR result structure: {line}")
 
-                    if texts:
-                        combined_text = ' '.join(texts)
-                        avg_confidence = sum(confidences) / len(confidences)
-                        return combined_text, avg_confidence
-            else:
-                # EasyOCR
-                result = self.ocr.readtext(enhanced)
+            if texts:
+                combined_text = ' '.join(texts)
+                avg_confidence = sum(confidences) / len(confidences)
+                return combined_text, avg_confidence
 
-                if result:
-                    texts = []
-                    confidences = []
-
-                    for detection in result:
-                        text = detection[1]
-                        conf = detection[2]
-
-                        if conf >= confidence_threshold:
-                            texts.append(text)
-                            confidences.append(conf)
-
-                    if texts:
-                        combined_text = ' '.join(texts)
-                        avg_confidence = sum(confidences) / len(confidences)
-                        return combined_text, avg_confidence
-
-            return None, 0.0
-
-        except Exception as e:
-            logger.warning(f"[OCR] Error during full frame text extraction: {e}")
-            return None, 0.0
+        return None, 0.0
 
     def enhance_detections_with_ocr(
         self,
@@ -281,7 +222,9 @@ class SignTextExtractor:
             detection['ocr_confidence'] = ocr_conf
 
             if ocr_text:
-                logger.debug(f"[OCR] Detected '{detection['sign_name']}' → Text: '{ocr_text}' (conf: {ocr_conf:.2f})")
+                print(f"  [OCR] ✓ Detected '{detection['sign_name']}' → Text: '{ocr_text}' (conf: {ocr_conf:.2f})")
+            else:
+                print(f"  [OCR] ✗ No text found in '{detection['sign_name']}'")
 
         return detections
 
@@ -342,10 +285,16 @@ class SignTextExtractor:
                         'ocr_text': ocr_text,
                         'ocr_confidence': ocr_conf
                     }]
-                    logger.info(f"[OCR] Frame {frame_idx} (uniform): Found text '{ocr_text}' (conf: {ocr_conf:.2f})")
+                    print(f"  [OCR] ✓ Frame {frame_idx} (uniform): Found text '{ocr_text}' (conf: {ocr_conf:.2f})")
                 else:
                     # No text found in uniform frame
+                    print(f"  [OCR] ✗ Frame {frame_idx} (uniform): No text found")
                     detections_dict[frame_idx] = []
+
+        # Print summary statistics
+        total_detections = sum(len(dets) for dets in detections_dict.values())
+        ocr_successes = sum(1 for dets in detections_dict.values() for d in dets if d.get('ocr_text'))
+        print(f"  [OCR] Summary: {ocr_successes}/{total_detections} detections have OCR text")
 
         return detections_dict
 
@@ -355,23 +304,21 @@ def add_ocr_to_detections(
     video_frames: List[np.ndarray],
     frame_indices: List[int],
     detections_dict: Dict[int, List[Dict]],
-    use_paddleocr: bool = True,
     confidence_threshold: float = 0.6
 ) -> Dict[int, List[Dict]]:
     """
-    Convenience function to add OCR text to detections.
+    Convenience function to add OCR text to detections using PaddleOCR.
 
     Args:
         video_frames: List of video frames
         frame_indices: List of frame indices
         detections_dict: Dict mapping frame_idx -> list of detections
-        use_paddleocr: Use PaddleOCR (True) or EasyOCR (False)
         confidence_threshold: Minimum OCR confidence
 
     Returns:
         Updated detections_dict with OCR information
     """
-    extractor = SignTextExtractor(use_paddleocr=use_paddleocr)
+    extractor = SignTextExtractor()
     return extractor.batch_enhance_detections(
         video_frames,
         frame_indices,
@@ -388,7 +335,7 @@ if __name__ == "__main__":
     dummy_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
     dummy_bbox = [100, 100, 200, 200]
 
-    extractor = SignTextExtractor(use_paddleocr=True)
+    extractor = SignTextExtractor()
 
     if extractor.ocr:
         text, conf = extractor.extract_text_from_region(dummy_frame, dummy_bbox)

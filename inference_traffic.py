@@ -354,6 +354,13 @@ def process_single_question(
 
     full_question = video_prefix + prompt_text
 
+    # Debug: Print detections summary and prompt to verify OCR inclusion
+    if ocr_extractor and detections_dict:
+        total_dets = sum(len(dets) for dets in detections_dict.values())
+        ocr_dets = sum(1 for dets in detections_dict.values() for d in dets if d.get('ocr_text'))
+        print(f"\n[Prompt Debug] Detections with OCR: {ocr_dets}/{total_dets}")
+        print(f"[Prompt Debug] Generated prompt preview (first 500 chars):\n{full_question[:500]}...\n")
+
     # Generate response
     try:
         generation_config = {
