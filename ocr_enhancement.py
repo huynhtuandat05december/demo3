@@ -118,13 +118,24 @@ class SignTextExtractor:
         texts = []
         confidences = []
 
-        # Handle new OCRResult object format (PaddleX/newer PaddleOCR)
-        if isinstance(result, list) and len(result) > 0:
+        # Check if result is directly an OCRResult object (newer PaddleX format)
+        if hasattr(result, 'rec_texts') and hasattr(result, 'rec_scores'):
+            # Direct OCRResult object
+            rec_texts = result.rec_texts
+            rec_scores = result.rec_scores
+
+            for text, conf in zip(rec_texts, rec_scores):
+                if conf >= confidence_threshold:
+                    texts.append(text)
+                    confidences.append(conf)
+
+        # Handle list-wrapped results
+        elif isinstance(result, list) and len(result) > 0:
             first_result = result[0]
 
-            # Check if it's the new OCRResult object format
+            # Check if it's wrapped OCRResult object
             if hasattr(first_result, 'rec_texts') and hasattr(first_result, 'rec_scores'):
-                # New format: OCRResult object with rec_texts and rec_scores
+                # Wrapped OCRResult object with rec_texts and rec_scores
                 rec_texts = first_result.rec_texts
                 rec_scores = first_result.rec_scores
 
@@ -192,13 +203,24 @@ class SignTextExtractor:
         texts = []
         confidences = []
 
-        # Handle new OCRResult object format (PaddleX/newer PaddleOCR)
-        if isinstance(result, list) and len(result) > 0:
+        # Check if result is directly an OCRResult object (newer PaddleX format)
+        if hasattr(result, 'rec_texts') and hasattr(result, 'rec_scores'):
+            # Direct OCRResult object
+            rec_texts = result.rec_texts
+            rec_scores = result.rec_scores
+
+            for text, conf in zip(rec_texts, rec_scores):
+                if conf >= confidence_threshold:
+                    texts.append(text)
+                    confidences.append(conf)
+
+        # Handle list-wrapped results
+        elif isinstance(result, list) and len(result) > 0:
             first_result = result[0]
 
-            # Check if it's the new OCRResult object format
+            # Check if it's wrapped OCRResult object
             if hasattr(first_result, 'rec_texts') and hasattr(first_result, 'rec_scores'):
-                # New format: OCRResult object with rec_texts and rec_scores
+                # Wrapped OCRResult object with rec_texts and rec_scores
                 rec_texts = first_result.rec_texts
                 rec_scores = first_result.rec_scores
 
