@@ -77,6 +77,50 @@ A. Có
 B. Không
 Phân tích: ĐỌC BIỂN - "Chỉ dành cho xe ô tô" nghĩa là chỉ xe ô tô mới được phép, xe máy không được đi.
 Đáp án: B
+""",
+
+    'lane_arrow': """
+Ví dụ về Đọc Mũi Tên Trên Mặt Đường:
+Câu hỏi: Xe đang ở làn giữa có mũi tên ↑←. Xe có được rẽ trái không?
+A. Có, được rẽ trái
+B. Không, chỉ được đi thẳng
+C. Không, chỉ được rẽ phải
+D. Phải đi thẳng hoặc rẽ phải
+Phân tích: Bước 1: ĐỌC mũi tên trên làn giữa - có 2 mũi tên ↑← (thẳng và trái). Bước 2: Mũi tên kết hợp nghĩa là xe được chọn ĐI THẲNG HOẶC RẼ TRÁI. Bước 3: Xe có quyền rẽ trái.
+Đáp án: A
+""",
+
+    'spatial_positioning': """
+Ví dụ về Xác Định Vị Trí Làn Đường:
+Câu hỏi: Đường có 3 làn cùng chiều. Xe đang ở làn bên phải cùng. Muốn rẽ trái thì phải làm gì?
+A. Rẽ trái ngay
+B. Chuyển sang làn giữa rồi rẽ trái
+C. Chuyển sang làn trái rồi rẽ trái
+D. Không được rẽ trái
+Phân tích: Bước 1: Đếm làn - có 3 làn (trái, giữa, phải). Bước 2: Xe ở làn phải. Bước 3: Muốn rẽ trái phải ở làn trái nhất. Bước 4: Phải chuyển 2 làn sang trái trước khi rẽ.
+Đáp án: C
+""",
+
+    'vehicle_interaction': """
+Ví dụ về Phân Tích Phương Tiện:
+Câu hỏi: Tại ngã tư, xe ô tô từ bên phải đang tiến vào và xe máy từ phía trước. Ai có quyền ưu tiên?
+A. Xe ô tô (từ bên phải)
+B. Xe máy (từ phía trước)
+C. Ai đến trước đi trước
+D. Xe lớn ưu tiên
+Phân tích: Bước 1: Quan sát vị trí - ô tô bên phải, xe máy phía trước. Bước 2: Áp dụng luật giao thông VN - nhường đường cho xe bên PHẢI. Bước 3: Xe ô tô có quyền ưu tiên.
+Đáp án: A
+""",
+
+    'temporal_sequence': """
+Ví dụ về Phân Tích Thời Gian:
+Câu hỏi: Trong video, đèn tín hiệu chuyển từ xanh sang vàng. Xe nên làm gì?
+A. Tăng tốc để qua giao lộ
+B. Dừng lại trước vạch dừng
+C. Tiếp tục đi với tốc độ bình thường
+D. Rẽ phải để tránh đèn đỏ
+Phân tích: Bước 1: Quan sát thay đổi - đèn XAnh → VÀNG (sắp đổi đỏ). Bước 2: Luật giao thông - đèn vàng là tín hiệu CẨN TRỌNG, chuẩn bị DỪNG. Bước 3: Hành động đúng là dừng trước vạch.
+Đáp án: B
 """
 }
 
@@ -95,32 +139,55 @@ def select_relevant_examples(question: str, max_examples: int = 2) -> str:
     question_lower = question.lower()
     examples = []
 
-    # Priority 1: Street name and direction questions (most important for text reading)
+    # Priority 1: Lane arrow questions (NEW - critical for road markings)
+    if any(kw in question_lower for kw in ['mũi tên', 'làn', 'lane', 'arrow', 'vạch kẻ']):
+        examples.append(FEW_SHOT_EXAMPLES['lane_arrow'])
+
+    # Priority 2: Spatial positioning questions (NEW - which lane, position)
+    if any(kw in question_lower for kw in ['làn nào', 'làn đường', 'vị trí', 'chuyển làn', 'làn trái', 'làn phải', 'làn giữa']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['spatial_positioning'])
+
+    # Priority 3: Vehicle interaction questions (NEW - traffic flow, right-of-way)
+    if any(kw in question_lower for kw in ['xe nào', 'phương tiện', 'ưu tiên', 'nhường đường', 'xe ô tô', 'xe máy', 'xe tải']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['vehicle_interaction'])
+
+    # Priority 4: Temporal/signal change questions (NEW - before/after, signal changes)
+    if any(kw in question_lower for kw in ['đèn', 'tín hiệu', 'chuyển', 'thay đổi', 'trước khi', 'sau khi', 'xanh', 'đỏ', 'vàng']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['temporal_sequence'])
+
+    # Priority 5: Street name and direction questions (text reading from signs)
     if any(kw in question_lower for kw in ['tên đường', 'đến đường', 'đi đường', 'vào đường', 'muốn đi']):
-        examples.append(FEW_SHOT_EXAMPLES['street_name_direction'])
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['street_name_direction'])
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['road_name'])
 
-    # Priority 2: Prohibition signs with text
-    elif any(kw in question_lower for kw in ['cấm dừng', 'cấm đỗ', 'cấm', 'biển đỏ']):
-        examples.append(FEW_SHOT_EXAMPLES['prohibition_text'])
+    # Priority 6: Prohibition signs with text
+    if any(kw in question_lower for kw in ['cấm dừng', 'cấm đỗ', 'cấm', 'biển đỏ']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['prohibition_text'])
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['traffic_sign'])
 
-    # Priority 3: Warning signs with text
-    elif any(kw in question_lower for kw in ['cảnh báo', 'tam giác', 'biển vàng', 'người đi bộ']):
-        examples.append(FEW_SHOT_EXAMPLES['warning_text'])
+    # Priority 7: Warning signs with text
+    if any(kw in question_lower for kw in ['cảnh báo', 'tam giác', 'biển vàng', 'người đi bộ']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['warning_text'])
 
-    # Priority 4: General traffic signs
-    elif any(kw in question_lower for kw in ['biển báo', 'biển hiệu', 'ý nghĩa', 'loại biển']):
-        examples.append(FEW_SHOT_EXAMPLES['traffic_sign'])
+    # Priority 8: General traffic signs
+    if any(kw in question_lower for kw in ['biển báo', 'biển hiệu', 'ý nghĩa', 'loại biển']):
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['traffic_sign'])
 
-    # Priority 5: Direction questions
+    # Priority 9: Direction questions
     if any(kw in question_lower for kw in ['rẽ trái', 'rẽ phải', 'quay đầu', 'đi thẳng', 'hướng']):
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['direction'])
 
-    # Priority 6: Yes/no questions (typically 2 choices)
+    # Priority 10: Yes/no questions (typically 2 choices)
     if any(kw in question_lower for kw in ['có được', 'có thể', 'được phép', 'được không', 'đúng hay sai']):
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['yes_no'])
@@ -186,22 +253,36 @@ def create_enhanced_prompt_with_few_shot(
         if detection_lines:
             detection_section = f"\nTHÔNG TIN BIỂN BÁO ĐÃ PHÁT HIỆN (ưu tiên đọc nội dung chữ):\n" + "\n".join(detection_lines) + "\n"
 
-    # Main prompt with structured reasoning - TEXT FIRST
+    # Main prompt with balanced multi-element emphasis
     prompt = f"""BẠN LÀ CHUYÊN GIA AN TOÀN GIAO THÔNG VIỆT NAM.
 
-QUAN TRỌNG - ƯU TIÊN ĐỌC NỘI DUNG CHỮ:
-• Biển chỉ đường (xanh/trắng): ĐỌC KỸ tên đường, hướng đi, khoảng cách
-• Biển cấm (đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
-• Biển báo hiệu (tam giác): ĐỌC nội dung cảnh báo
-• Văn bản trên biển là NGUỒN THÔNG TIN CHÍNH XÁC NHẤT
+Nhiệm vụ: Phân tích TOÀN BỘ video camera hành trình và trả lời câu hỏi dựa trên TẤT CẢ các yếu tố:
 
-Nhiệm vụ: Phân tích video camera hành trình và trả lời câu hỏi dựa trên:
-- Nội dung CHỮ trên các biển báo (quan trọng nhất!)
-- Hình dạng, màu sắc, ký hiệu của biển
-- Đèn tín hiệu (màu sắc, trạng thái)
-- Vạch kẻ đường và mũi tên
-- Phương tiện giao thông
-- Môi trường (thời tiết, ánh sáng, vị trí)
+1. ĐỌC NỘI DUNG CHỮ trên biển báo:
+   • Biển chỉ đường: tên đường, hướng, khoảng cách
+   • Biển cấm: nội dung cấm chỉ cụ thể
+   • Biển cảnh báo: nội dung cảnh báo
+
+2. ĐỌC MŨI TÊN trên mặt đường:
+   • Hướng: thẳng (↑), trái (←), phải (→), quay đầu (↶)
+   • Mũi tên kết hợp: (←↑) = trái HOẶC thẳng
+   • Xác định mũi tên thuộc làn nào
+
+3. XÁC ĐỊNH VỊ TRÍ LÀN ĐƯỜNG:
+   • Xe đang ở làn nào (trái/giữa/phải)?
+   • Tổng số làn (đếm từ trái sang)
+   • Loại đường: 1 chiều/2 chiều
+
+4. PHÂN TÍCH VẠCH KẺ và PHƯƠNG TIỆN:
+   • Vạch liền (không vượt), vạch đứt (được vượt)
+   • Vạch sang đường, vạch dừng, vạch vàng
+   • Loại xe: ô tô, xe máy, xe tải, xe buýt
+   • Vị trí và hành động của xe
+
+5. ĐÈN TÍN HIỆU và THỜI GIAN:
+   • Màu đèn: đỏ/vàng/xanh, đèn tròn/đèn mũi tên
+   • Thứ tự sự kiện, thay đổi trong video
+   • Môi trường: thời tiết, ánh sáng
 {few_shot_section}{detection_section}
 BÀI TOÁN CẦN GIẢI:
 
@@ -210,14 +291,15 @@ Câu hỏi: {question}
 Các lựa chọn:
 {choices_text}
 
-Hãy phân tích theo các bước (ƯU TIÊN ĐỌC CHỮ TRƯỚC):
-1. ĐỌC KỸ nội dung văn bản trên các biển báo (tên đường, nội dung cấm, cảnh báo...)
-2. Quan sát hình dạng, màu sắc, mũi tên chỉ hướng trên biển
-3. Kết hợp với các yếu tố khác trong video (đèn, vạch, xe...)
-4. Áp dụng luật giao thông Việt Nam và chọn đáp án chính xác
+Hãy phân tích theo 5 BƯỚC (quan sát TẤT CẢ các yếu tố):
+1. ĐỌC văn bản (biển báo) VÀ mũi tên (trên đường)
+2. XÁC ĐỊNH vị trí xe, số làn đường, loại đường
+3. QUAN SÁT phương tiện (loại, vị trí, hành động), vạch kẻ đường
+4. PHÂN TÍCH đèn tín hiệu, thời gian, thay đổi trong video
+5. ÁP DỤNG luật giao thông Việt Nam và chọn đáp án chính xác
 
 Trả lời:
-Phân tích: [Nêu rõ nội dung đã đọc được từ biển, sau đó giải thích]
+Phân tích: [Nêu rõ các yếu tố quan trọng đã quan sát, sau đó giải thích]
 Đáp án: [Chữ cái A/B/C/D]"""
 
     return prompt

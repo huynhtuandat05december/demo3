@@ -18,20 +18,47 @@ def create_traffic_prompt(question: str, choices: list[str]) -> str:
     """
     choices_text = "\n".join(choices)
 
-    prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích video từ camera hành trình này và trả lời câu hỏi dựa trên:
+    prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích TOÀN BỘ video từ camera hành trình và trả lời câu hỏi dựa trên:
 
-QUAN TRỌNG - ĐỌC KỸ NỘI DUNG CHỮ trên các biển báo:
-- Biển chỉ đường (màu xanh/trắng): ĐỌC RÕ TÊN ĐƯỜNG, hướng đi, khoảng cách
-- Biển cấm (màu đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
-- Biển báo hiệu (tam giác vàng/đỏ): ĐỌC nội dung cảnh báo
-- Biển chỉ dẫn khác: ĐỌC tất cả văn bản trên biển
+1. ĐỌC KỸ NỘI DUNG CHỮ trên biển báo:
+   - Biển chỉ đường (xanh/trắng): tên đường, hướng đi, khoảng cách
+   - Biển cấm (đỏ): nội dung cấm chỉ (cấm rẽ, cấm dừng, cấm xe...)
+   - Biển báo hiệu (tam giác): nội dung cảnh báo
+   - Hình dạng, màu sắc, ký hiệu của biển
 
-Phân tích thêm:
-- Hình dạng, màu sắc, ký hiệu của các biển báo
-- Đèn tín hiệu giao thông (màu và trạng thái)
-- Vạch kẻ đường và mũi tên chỉ hướng
-- Các phương tiện giao thông xung quanh
-- Điều kiện môi trường (thời tiết, ánh sáng, vị trí)
+2. ĐỌC MŨI TÊN trên mặt đường:
+   - Hướng mũi tên: thẳng (↑), trái (←), phải (→), quay đầu (↶)
+   - Mũi tên kết hợp: ví dụ (←↑) = được rẽ trái HOẶC đi thẳng
+   - Xác định mũi tên thuộc làn đường nào
+
+3. XÁC ĐỊNH VỊ TRÍ và LÀN ĐƯỜNG:
+   - Xe đang ở làn nào (làn trái/giữa/phải)?
+   - Tổng số làn đường (đếm từ trái sang phải)
+   - Loại đường: 1 chiều hay 2 chiều, đường phố hay cao tốc
+   - Khoảng cách đến giao lộ/biển báo
+
+4. PHÂN TÍCH VẠCH KẺ ĐƯỜNG:
+   - Vạch liền trắng: KHÔNG được vượt/chuyển làn
+   - Vạch đứt trắng: ĐƯỢC PHÉP vượt/chuyển làn
+   - Vạch sang đường (zebra): ưu tiên người đi bộ
+   - Vạch dừng (stop line): phải dừng trước vạch
+   - Vạch vàng: cấm dừng/đỗ xe
+
+5. QUAN SÁT PHƯƠNG TIỆN:
+   - Loại xe: xe máy, ô tô, xe tải, xe buýt, xe đạp, người đi bộ
+   - Vị trí: ở làn nào, phía trước/sau/bên cạnh
+   - Hành động: đang dừng/di chuyển/rẽ/vượt
+   - Mật độ: đông/vắng, tắc nghẽn hay thông thoáng
+
+6. ĐÈN TÍN HIỆU GIAO THÔNG:
+   - Màu đèn: đỏ (dừng), vàng (chờ), xanh (đi)
+   - Loại: đèn tròn (tất cả hướng) hay đèn mũi tên (hướng cụ thể)
+   - Trạng thái và thay đổi của đèn trong video
+
+7. PHÂN TÍCH THỜI GIAN:
+   - Thứ tự các sự kiện (trước/sau/trong lúc)
+   - Thay đổi: đèn tín hiệu, vị trí xe, giao thông
+   - Môi trường: thời tiết, ánh sáng, điều kiện đường
 
 Câu hỏi: {question}
 
@@ -113,20 +140,47 @@ def create_traffic_prompt_with_context(
         if detection_lines:
             detection_context = "\n\nTHÔNG TIN BIỂN BÁO ĐÃ PHÁT HIỆN (chú ý nội dung chữ):\n" + "\n".join(detection_lines) + "\n"
 
-    prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích video từ camera hành trình này và trả lời câu hỏi dựa trên:
+    prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích TOÀN BỘ video từ camera hành trình và trả lời câu hỏi dựa trên:
 
-QUAN TRỌNG - ĐỌC KỸ NỘI DUNG CHỮ trên các biển báo:
-- Biển chỉ đường (màu xanh/trắng): ĐỌC RÕ TÊN ĐƯỜNG, hướng đi, khoảng cách
-- Biển cấm (màu đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
-- Biển báo hiệu (tam giác vàng/đỏ): ĐỌC nội dung cảnh báo
-- Biển chỉ dẫn khác: ĐỌC tất cả văn bản trên biển
+1. ĐỌC KỸ NỘI DUNG CHỮ trên biển báo:
+   - Biển chỉ đường (xanh/trắng): tên đường, hướng đi, khoảng cách
+   - Biển cấm (đỏ): nội dung cấm chỉ (cấm rẽ, cấm dừng, cấm xe...)
+   - Biển báo hiệu (tam giác): nội dung cảnh báo
+   - Hình dạng, màu sắc, ký hiệu của biển
 
-Phân tích thêm:
-- Hình dạng, màu sắc, ký hiệu của các biển báo
-- Đèn tín hiệu giao thông (màu và trạng thái)
-- Vạch kẻ đường và mũi tên chỉ hướng
-- Các phương tiện giao thông xung quanh
-- Điều kiện môi trường (thời tiết, ánh sáng, vị trí){detection_context}
+2. ĐỌC MŨI TÊN trên mặt đường:
+   - Hướng mũi tên: thẳng (↑), trái (←), phải (→), quay đầu (↶)
+   - Mũi tên kết hợp: ví dụ (←↑) = được rẽ trái HOẶC đi thẳng
+   - Xác định mũi tên thuộc làn đường nào
+
+3. XÁC ĐỊNH VỊ TRÍ và LÀN ĐƯỜNG:
+   - Xe đang ở làn nào (làn trái/giữa/phải)?
+   - Tổng số làn đường (đếm từ trái sang phải)
+   - Loại đường: 1 chiều hay 2 chiều, đường phố hay cao tốc
+   - Khoảng cách đến giao lộ/biển báo
+
+4. PHÂN TÍCH VẠCH KẺ ĐƯỜNG:
+   - Vạch liền trắng: KHÔNG được vượt/chuyển làn
+   - Vạch đứt trắng: ĐƯỢC PHÉP vượt/chuyển làn
+   - Vạch sang đường (zebra): ưu tiên người đi bộ
+   - Vạch dừng (stop line): phải dừng trước vạch
+   - Vạch vàng: cấm dừng/đỗ xe
+
+5. QUAN SÁT PHƯƠNG TIỆN:
+   - Loại xe: xe máy, ô tô, xe tải, xe buýt, xe đạp, người đi bộ
+   - Vị trí: ở làn nào, phía trước/sau/bên cạnh
+   - Hành động: đang dừng/di chuyển/rẽ/vượt
+   - Mật độ: đông/vắng, tắc nghẽn hay thông thoáng
+
+6. ĐÈN TÍN HIỆU GIAO THÔNG:
+   - Màu đèn: đỏ (dừng), vàng (chờ), xanh (đi)
+   - Loại: đèn tròn (tất cả hướng) hay đèn mũi tên (hướng cụ thể)
+   - Trạng thái và thay đổi của đèn trong video
+
+7. PHÂN TÍCH THỜI GIAN:
+   - Thứ tự các sự kiện (trước/sau/trong lúc)
+   - Thay đổi: đèn tín hiệu, vị trí xe, giao thông
+   - Môi trường: thời tiết, ánh sáng, điều kiện đường{detection_context}
 Câu hỏi: {question}
 
 Các lựa chọn:
