@@ -117,7 +117,7 @@ class SignTextExtractor:
 
             # Run OCR
             if self.use_paddleocr:
-                result = self.ocr.ocr(enhanced, cls=True)
+                result = self.ocr.ocr(enhanced)
 
                 if result and result[0]:
                     texts = []
@@ -186,7 +186,7 @@ class SignTextExtractor:
 
             # Run OCR on full frame
             if self.use_paddleocr:
-                result = self.ocr.ocr(enhanced, cls=True)
+                result = self.ocr.ocr(enhanced)
 
                 if result and result[0]:
                     texts = []
