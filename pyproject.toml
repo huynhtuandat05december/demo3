@@ -3,7 +3,7 @@ name = "demo3"
 version = "0.1.0"
 description = "Vietnamese Traffic Safety Video QA with InternVL3-8B and OCR"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "transformers>=4.52.1",
     "av",
@@ -20,4 +20,20 @@ dependencies = [
     "accelerate",
     "ultralytics",
     "paddleocr",
+    "paddlepaddle-gpu==3.0.0",
 ]
+
+[tool.uv.pip]
+index-strategy = "unsafe-best-match"
+
+[tool.uv.sources]
+paddlepaddle-gpu = [{ index = "paddlepaddle" }]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
+
+[[tool.uv.index]]
+name = "paddlepaddle"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+explicit = true
