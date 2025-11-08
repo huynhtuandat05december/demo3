@@ -19,7 +19,15 @@ def create_traffic_prompt(question: str, choices: list[str]) -> str:
     choices_text = "\n".join(choices)
 
     prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích video từ camera hành trình này và trả lời câu hỏi dựa trên:
-- Các biển báo giao thông (hình dạng, màu sắc, ký hiệu)
+
+QUAN TRỌNG - ĐỌC KỸ NỘI DUNG CHỮ trên các biển báo:
+- Biển chỉ đường (màu xanh/trắng): ĐỌC RÕ TÊN ĐƯỜNG, hướng đi, khoảng cách
+- Biển cấm (màu đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
+- Biển báo hiệu (tam giác vàng/đỏ): ĐỌC nội dung cảnh báo
+- Biển chỉ dẫn khác: ĐỌC tất cả văn bản trên biển
+
+Phân tích thêm:
+- Hình dạng, màu sắc, ký hiệu của các biển báo
 - Đèn tín hiệu giao thông (màu và trạng thái)
 - Vạch kẻ đường và mũi tên chỉ hướng
 - Các phương tiện giao thông xung quanh
@@ -93,18 +101,28 @@ def create_traffic_prompt_with_context(
                     ocr_text = detection.get('ocr_text')
                     ocr_conf = detection.get('ocr_confidence', 0.0)
 
-                    line = f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}"
+                    # Make OCR text more prominent by putting it first if available
                     if ocr_text and ocr_conf >= 0.6:
-                        line += f' [Nội dung: "{ocr_text}"]'
+                        line = f"Khung hình {i+1}: Biển '{sign_name}' ở {location} - NỘI DUNG: \"{ocr_text}\""
+                    else:
+                        line = f"Khung hình {i+1}: Phát hiện biển báo '{sign_name}' ở {location}"
                     detection_lines.append(line)
             else:
                 detection_lines.append(f"Khung hình {i+1}: Không phát hiện biển báo")
 
         if detection_lines:
-            detection_context = "\n\nThông tin biển báo đã phát hiện:\n" + "\n".join(detection_lines) + "\n"
+            detection_context = "\n\nTHÔNG TIN BIỂN BÁO ĐÃ PHÁT HIỆN (chú ý nội dung chữ):\n" + "\n".join(detection_lines) + "\n"
 
     prompt = f"""Bạn là một chuyên gia về an toàn giao thông tại Việt Nam. Hãy phân tích video từ camera hành trình này và trả lời câu hỏi dựa trên:
-- Các biển báo giao thông (hình dạng, màu sắc, ký hiệu)
+
+QUAN TRỌNG - ĐỌC KỸ NỘI DUNG CHỮ trên các biển báo:
+- Biển chỉ đường (màu xanh/trắng): ĐỌC RÕ TÊN ĐƯỜNG, hướng đi, khoảng cách
+- Biển cấm (màu đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
+- Biển báo hiệu (tam giác vàng/đỏ): ĐỌC nội dung cảnh báo
+- Biển chỉ dẫn khác: ĐỌC tất cả văn bản trên biển
+
+Phân tích thêm:
+- Hình dạng, màu sắc, ký hiệu của các biển báo
 - Đèn tín hiệu giao thông (màu và trạng thái)
 - Vạch kẻ đường và mũi tên chỉ hướng
 - Các phương tiện giao thông xung quanh

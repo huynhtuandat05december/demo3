@@ -13,19 +13,52 @@ A. Cấm xe máy
 B. Cấm ô tô
 C. Hết cấm xe máy
 D. Đường dành cho xe máy
-Phân tích: Biển tròn màu đỏ là biển cấm. Hình xe máy bị gạch chéo nghĩa là cấm xe máy đi qua.
+Phân tích: Đọc biển - Biển tròn màu đỏ là biển cấm. Hình xe máy bị gạch chéo nghĩa là cấm xe máy đi qua.
 Đáp án: A
 """,
 
     'road_name': """
-Ví dụ về Tên Đường:
+Ví dụ về Tên Đường (Biển Chỉ Đường):
 Câu hỏi: Biển chỉ dẫn màu xanh có mũi tên trái ghi "Đường Lê Lợi". Muốn đi Đường Lê Lợi thì phải rẽ hướng nào?
 A. Đi thẳng
 B. Rẽ trái
 C. Rẽ phải
 D. Quay đầu
-Phân tích: Biển xanh chỉ dẫn với mũi tên trái chỉ rằng phải rẽ trái để vào Đường Lê Lợi.
+Phân tích: ĐỌC NỘI DUNG BIỂN - Biển xanh ghi "Đường Lê Lợi" với mũi tên trái → phải rẽ trái để vào Đường Lê Lợi.
 Đáp án: B
+""",
+
+    'street_name_direction': """
+Ví dụ về Đọc Tên Đường Từ Biển Chỉ Đường:
+Câu hỏi: Theo biển báo trong video, muốn đi đến đường Lương Định Của thì phải đi hướng nào?
+A. Đi thẳng
+B. Rẽ trái
+C. Rẽ phải
+D. Quay đầu
+Phân tích: Bước 1: ĐỌC biển chỉ đường màu xanh/trắng để tìm "Lương Định Của". Bước 2: Xem mũi tên trên biển chỉ hướng nào (trái/phải/thẳng). Bước 3: Theo hướng mũi tên đó.
+Đáp án: [Tùy theo mũi tên trên biển]
+""",
+
+    'prohibition_text': """
+Ví dụ về Đọc Nội Dung Biển Cấm:
+Câu hỏi: Biển báo màu đỏ ghi "Cấm dừng và đỗ xe" có nghĩa là gì?
+A. Được dừng nhưng không được đỗ
+B. Được đỗ nhưng không được dừng
+C. Không được cả dừng và đỗ
+D. Chỉ được dừng tạm thời
+Phân tích: ĐỌC KỸ NỘI DUNG - Biển ghi RÕ "Cấm dừng VÀ đỗ xe" nghĩa là không được phép cả hai hành động dừng và đỗ.
+Đáp án: C
+""",
+
+    'warning_text': """
+Ví dụ về Đọc Biển Báo Hiệu:
+Câu hỏi: Biển tam giác màu vàng có ghi chữ "Đường người đi bộ cắt ngang" cảnh báo điều gì?
+A. Có đường dành cho người đi bộ
+B. Cấm người đi bộ
+C. Sắp có vạch sang đường
+D. Ưu tiên người đi bộ
+Phân tích: ĐỌC BIỂN CẢNH BÁO - Biển tam giác vàng ghi "Đường người đi bộ cắt ngang" → cảnh báo phía trước có vạch sang đường cho người đi bộ, cần giảm tốc độ.
+Đáp án: C
 """,
 
     'direction': """
@@ -42,7 +75,7 @@ Ví dụ về Câu Hỏi Đúng/Sai:
 Câu hỏi: Xe đang di chuyển trên làn đường có biển "Chỉ dành cho xe ô tô". Xe máy có được đi trên làn này không?
 A. Có
 B. Không
-Phân tích: Biển "Chỉ dành cho xe ô tô" nghĩa là chỉ xe ô tô mới được phép, xe máy không được đi.
+Phân tích: ĐỌC BIỂN - "Chỉ dành cho xe ô tô" nghĩa là chỉ xe ô tô mới được phép, xe máy không được đi.
 Đáp án: B
 """
 }
@@ -62,19 +95,33 @@ def select_relevant_examples(question: str, max_examples: int = 2) -> str:
     question_lower = question.lower()
     examples = []
 
-    # Check question type and add relevant examples
-    if any(kw in question_lower for kw in ['biển báo', 'biển hiệu', 'ý nghĩa', 'loại biển']):
+    # Priority 1: Street name and direction questions (most important for text reading)
+    if any(kw in question_lower for kw in ['tên đường', 'đến đường', 'đi đường', 'vào đường', 'muốn đi']):
+        examples.append(FEW_SHOT_EXAMPLES['street_name_direction'])
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['road_name'])
+
+    # Priority 2: Prohibition signs with text
+    elif any(kw in question_lower for kw in ['cấm dừng', 'cấm đỗ', 'cấm', 'biển đỏ']):
+        examples.append(FEW_SHOT_EXAMPLES['prohibition_text'])
+        if len(examples) < max_examples:
+            examples.append(FEW_SHOT_EXAMPLES['traffic_sign'])
+
+    # Priority 3: Warning signs with text
+    elif any(kw in question_lower for kw in ['cảnh báo', 'tam giác', 'biển vàng', 'người đi bộ']):
+        examples.append(FEW_SHOT_EXAMPLES['warning_text'])
+
+    # Priority 4: General traffic signs
+    elif any(kw in question_lower for kw in ['biển báo', 'biển hiệu', 'ý nghĩa', 'loại biển']):
         examples.append(FEW_SHOT_EXAMPLES['traffic_sign'])
 
-    if any(kw in question_lower for kw in ['tên đường', 'đến đường', 'đi đường', 'vào đường']):
-        examples.append(FEW_SHOT_EXAMPLES['road_name'])
-
+    # Priority 5: Direction questions
     if any(kw in question_lower for kw in ['rẽ trái', 'rẽ phải', 'quay đầu', 'đi thẳng', 'hướng']):
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['direction'])
 
-    # For yes/no questions (typically 2 choices)
-    if any(kw in question_lower for kw in ['có được', 'có thể', 'được phép', 'được không']):
+    # Priority 6: Yes/no questions (typically 2 choices)
+    if any(kw in question_lower for kw in ['có được', 'có thể', 'được phép', 'được không', 'đúng hay sai']):
         if len(examples) < max_examples:
             examples.append(FEW_SHOT_EXAMPLES['yes_no'])
 
@@ -114,7 +161,7 @@ def create_enhanced_prompt_with_few_shot(
     if examples:
         few_shot_section = f"\nCÁC VÍ DỤ THAM KHẢO:\n{examples}\n"
 
-    # Section 2: Detection context (if available)
+    # Section 2: Detection context (if available) - emphasize OCR text
     detection_section = ""
     if detections_dict and frame_indices:
         detection_lines = []
@@ -126,21 +173,31 @@ def create_enhanced_prompt_with_few_shot(
                     ocr = det.get('ocr_text', '')
                     conf = det.get('ocr_confidence', 0.0)
 
-                    line = f"  • Khung {i+1}: {sign} ({loc})"
+                    # Make OCR text more prominent by putting it first if available
                     if ocr and conf >= 0.6:
-                        line += f' - Nội dung: "{ocr}"'
-                    elif ocr:
-                        # OCR text exists but confidence is too low
-                        print(f"  [Prompt] ⚠ Skipping low-confidence OCR for '{sign}': '{ocr}' (conf: {conf:.2f} < 0.6)")
+                        line = f"  • Khung {i+1}: {sign} ({loc}) - NỘI DUNG: \"{ocr}\""
+                    else:
+                        line = f"  • Khung {i+1}: {sign} ({loc})"
+                        if ocr:
+                            # OCR text exists but confidence is too low
+                            print(f"  [Prompt] ⚠ Skipping low-confidence OCR for '{sign}': '{ocr}' (conf: {conf:.2f} < 0.6)")
                     detection_lines.append(line)
 
         if detection_lines:
-            detection_section = f"\nTHÔNG TIN BIỂN BÁO ĐÃ PHÁT HIỆN:\n" + "\n".join(detection_lines) + "\n"
+            detection_section = f"\nTHÔNG TIN BIỂN BÁO ĐÃ PHÁT HIỆN (ưu tiên đọc nội dung chữ):\n" + "\n".join(detection_lines) + "\n"
 
-    # Main prompt with structured reasoning
+    # Main prompt with structured reasoning - TEXT FIRST
     prompt = f"""BẠN LÀ CHUYÊN GIA AN TOÀN GIAO THÔNG VIỆT NAM.
+
+QUAN TRỌNG - ƯU TIÊN ĐỌC NỘI DUNG CHỮ:
+• Biển chỉ đường (xanh/trắng): ĐỌC KỸ tên đường, hướng đi, khoảng cách
+• Biển cấm (đỏ): ĐỌC nội dung cấm chỉ cụ thể (cấm rẽ, cấm dừng, cấm xe...)
+• Biển báo hiệu (tam giác): ĐỌC nội dung cảnh báo
+• Văn bản trên biển là NGUỒN THÔNG TIN CHÍNH XÁC NHẤT
+
 Nhiệm vụ: Phân tích video camera hành trình và trả lời câu hỏi dựa trên:
-- Biển báo giao thông (hình dạng, màu sắc, ký hiệu, nội dung chữ)
+- Nội dung CHỮ trên các biển báo (quan trọng nhất!)
+- Hình dạng, màu sắc, ký hiệu của biển
 - Đèn tín hiệu (màu sắc, trạng thái)
 - Vạch kẻ đường và mũi tên
 - Phương tiện giao thông
@@ -153,14 +210,14 @@ Câu hỏi: {question}
 Các lựa chọn:
 {choices_text}
 
-Hãy phân tích theo các bước:
-1. Quan sát các yếu tố trong video
-2. Xác định loại biển báo hoặc tình huống
-3. Áp dụng luật giao thông Việt Nam
-4. Chọn đáp án chính xác
+Hãy phân tích theo các bước (ƯU TIÊN ĐỌC CHỮ TRƯỚC):
+1. ĐỌC KỸ nội dung văn bản trên các biển báo (tên đường, nội dung cấm, cảnh báo...)
+2. Quan sát hình dạng, màu sắc, mũi tên chỉ hướng trên biển
+3. Kết hợp với các yếu tố khác trong video (đèn, vạch, xe...)
+4. Áp dụng luật giao thông Việt Nam và chọn đáp án chính xác
 
 Trả lời:
-Phân tích: [Giải thích ngắn gọn]
+Phân tích: [Nêu rõ nội dung đã đọc được từ biển, sau đó giải thích]
 Đáp án: [Chữ cái A/B/C/D]"""
 
     return prompt
