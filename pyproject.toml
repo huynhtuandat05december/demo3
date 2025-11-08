@@ -20,7 +20,7 @@ dependencies = [
     "accelerate",
     "ultralytics",
     "paddleocr",
-    "paddlepaddle-gpu==3.0.0",
+    "paddlepaddle>=3.0.0",
 ]
 
 [tool.uv.pip]
