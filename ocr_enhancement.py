@@ -218,9 +218,22 @@ class SignTextExtractor:
         elif isinstance(result, list) and len(result) > 0:
             first_result = result[0]
 
+            # Debug: print available attributes to understand the object
+            print(f"\n[OCR DEBUG] first_result type: {type(first_result)}")
+            print(f"[OCR DEBUG] first_result class name: {first_result.__class__.__name__}")
+            available_attrs = [attr for attr in dir(first_result) if not attr.startswith('_')]
+            print(f"[OCR DEBUG] Available attributes: {available_attrs}")
+
+            # Try to access rec_texts and rec_scores
+            if hasattr(first_result, 'rec_texts'):
+                print(f"[OCR DEBUG] rec_texts value: {first_result.rec_texts}")
+            if hasattr(first_result, 'rec_scores'):
+                print(f"[OCR DEBUG] rec_scores value: {first_result.rec_scores}")
+
             # Check if it's wrapped OCRResult object
             if hasattr(first_result, 'rec_texts') and hasattr(first_result, 'rec_scores'):
                 # Wrapped OCRResult object with rec_texts and rec_scores
+                print(f"[OCR DEBUG] ✓ Using rec_texts/rec_scores attributes")
                 rec_texts = first_result.rec_texts
                 rec_scores = first_result.rec_scores
 
@@ -231,6 +244,7 @@ class SignTextExtractor:
 
             # Old format: nested list [[bbox, (text, conf)], ...]
             elif isinstance(first_result, list):
+                print(f"[OCR DEBUG] ✓ Using old nested list format")
                 for line in first_result:
                     if not isinstance(line, (list, tuple)):
                         raise ValueError(f"[OCR] PaddleOCR line is not a list/tuple. Got: {type(line)} = {line}")
@@ -247,7 +261,11 @@ class SignTextExtractor:
                     else:
                         raise ValueError(f"[OCR] Malformed PaddleOCR result structure. Line length: {len(line)}, Line: {line}")
             else:
-                raise ValueError(f"[OCR] Unknown PaddleOCR result format. Type: {type(first_result)}")
+                print(f"[OCR DEBUG] ✗ Unknown format - neither OCRResult nor list")
+                print(f"[OCR DEBUG] hasattr(first_result, 'rec_texts'): {hasattr(first_result, 'rec_texts')}")
+                print(f"[OCR DEBUG] hasattr(first_result, 'rec_scores'): {hasattr(first_result, 'rec_scores')}")
+                print(f"[OCR DEBUG] isinstance(first_result, list): {isinstance(first_result, list)}")
+                raise ValueError(f"[OCR] Unknown PaddleOCR result format. Type: {type(first_result)}, Dir: {available_attrs[:20]}")
         else:
             raise ValueError(f"[OCR] PaddleOCR returned invalid result type: {type(result)}")
 
