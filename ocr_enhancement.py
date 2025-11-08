@@ -112,29 +112,41 @@ class SignTextExtractor:
         # Run PaddleOCR
         result = self.ocr.ocr(enhanced)
 
-        if result and result[0]:
-            texts = []
-            confidences = []
+        # Validate that result is properly structured
+        if not result or not isinstance(result, list):
+            raise ValueError(f"[OCR] PaddleOCR returned invalid result type: {type(result)}")
 
-            for line in result[0]:
-                # Validate result structure before accessing indices
-                if (len(line) > 1 and
-                    isinstance(line[1], (list, tuple)) and
-                    len(line[1]) >= 2):
-                    text = line[1][0]
-                    conf = line[1][1]
+        if not result[0]:
+            return None, 0.0
 
-                    if conf >= confidence_threshold:
-                        texts.append(text)
-                        confidences.append(conf)
-                else:
-                    # Malformed OCR result - raise error instead of skipping
-                    raise ValueError(f"[OCR] Malformed PaddleOCR result structure: {line}")
+        if not isinstance(result[0], list):
+            raise ValueError(f"[OCR] PaddleOCR result[0] is not a list. Got: {type(result[0])} = {result[0]}")
 
-            if texts:
-                combined_text = ' '.join(texts)
-                avg_confidence = sum(confidences) / len(confidences)
-                return combined_text, avg_confidence
+        texts = []
+        confidences = []
+
+        for line in result[0]:
+            # Validate result structure before accessing indices
+            if not isinstance(line, (list, tuple)):
+                raise ValueError(f"[OCR] PaddleOCR line is not a list/tuple. Got: {type(line)} = {line}")
+
+            if (len(line) > 1 and
+                isinstance(line[1], (list, tuple)) and
+                len(line[1]) >= 2):
+                text = line[1][0]
+                conf = line[1][1]
+
+                if conf >= confidence_threshold:
+                    texts.append(text)
+                    confidences.append(conf)
+            else:
+                # Malformed OCR result - raise error with details
+                raise ValueError(f"[OCR] Malformed PaddleOCR result structure. Line length: {len(line)}, Line: {line}")
+
+        if texts:
+            combined_text = ' '.join(texts)
+            avg_confidence = sum(confidences) / len(confidences)
+            return combined_text, avg_confidence
 
         return None, 0.0
 
@@ -162,29 +174,41 @@ class SignTextExtractor:
         # Run PaddleOCR on full frame
         result = self.ocr.ocr(enhanced)
 
-        if result and result[0]:
-            texts = []
-            confidences = []
+        # Validate that result is properly structured
+        if not result or not isinstance(result, list):
+            raise ValueError(f"[OCR] PaddleOCR returned invalid result type: {type(result)}")
 
-            for line in result[0]:
-                # Validate result structure before accessing indices
-                if (len(line) > 1 and
-                    isinstance(line[1], (list, tuple)) and
-                    len(line[1]) >= 2):
-                    text = line[1][0]
-                    conf = line[1][1]
+        if not result[0]:
+            return None, 0.0
 
-                    if conf >= confidence_threshold:
-                        texts.append(text)
-                        confidences.append(conf)
-                else:
-                    # Malformed OCR result - raise error instead of skipping
-                    raise ValueError(f"[OCR] Malformed PaddleOCR result structure: {line}")
+        if not isinstance(result[0], list):
+            raise ValueError(f"[OCR] PaddleOCR result[0] is not a list. Got: {type(result[0])} = {result[0]}")
 
-            if texts:
-                combined_text = ' '.join(texts)
-                avg_confidence = sum(confidences) / len(confidences)
-                return combined_text, avg_confidence
+        texts = []
+        confidences = []
+
+        for line in result[0]:
+            # Validate result structure before accessing indices
+            if not isinstance(line, (list, tuple)):
+                raise ValueError(f"[OCR] PaddleOCR line is not a list/tuple. Got: {type(line)} = {line}")
+
+            if (len(line) > 1 and
+                isinstance(line[1], (list, tuple)) and
+                len(line[1]) >= 2):
+                text = line[1][0]
+                conf = line[1][1]
+
+                if conf >= confidence_threshold:
+                    texts.append(text)
+                    confidences.append(conf)
+            else:
+                # Malformed OCR result - raise error with details
+                raise ValueError(f"[OCR] Malformed PaddleOCR result structure. Line length: {len(line)}, Line: {line}")
+
+        if texts:
+            combined_text = ' '.join(texts)
+            avg_confidence = sum(confidences) / len(confidences)
+            return combined_text, avg_confidence
 
         return None, 0.0
 
