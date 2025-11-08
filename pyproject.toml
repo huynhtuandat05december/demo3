@@ -21,5 +21,8 @@ dependencies = [
     "bitsandbytes",
     "ultralytics",
     "paddleocr",
-    "paddlepaddle-gpu",
+    "paddlepaddle-gpu==3.2.1 --default-index https://www.paddlepaddle.org.cn/packages/stable/cu126/",
 ]
+
+[tool.uv]
+environments = ["python_version < '3.12' or sys_platform != 'win32'"]
