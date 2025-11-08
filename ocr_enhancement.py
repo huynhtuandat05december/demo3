@@ -124,12 +124,20 @@ class SignTextExtractor:
                     confidences = []
 
                     for line in result[0]:
-                        text = line[1][0]
-                        conf = line[1][1]
+                        # Validate result structure before accessing indices
+                        if (len(line) > 1 and
+                            isinstance(line[1], (list, tuple)) and
+                            len(line[1]) >= 2):
+                            text = line[1][0]
+                            conf = line[1][1]
 
-                        if conf >= confidence_threshold:
-                            texts.append(text)
-                            confidences.append(conf)
+                            if conf >= confidence_threshold:
+                                texts.append(text)
+                                confidences.append(conf)
+                        else:
+                            # Skip malformed OCR result
+                            logger.debug(f"[OCR] Skipping malformed result: {line}")
+                            continue
 
                     if texts:
                         combined_text = ' '.join(texts)
@@ -193,12 +201,20 @@ class SignTextExtractor:
                     confidences = []
 
                     for line in result[0]:
-                        text = line[1][0]
-                        conf = line[1][1]
+                        # Validate result structure before accessing indices
+                        if (len(line) > 1 and
+                            isinstance(line[1], (list, tuple)) and
+                            len(line[1]) >= 2):
+                            text = line[1][0]
+                            conf = line[1][1]
 
-                        if conf >= confidence_threshold:
-                            texts.append(text)
-                            confidences.append(conf)
+                            if conf >= confidence_threshold:
+                                texts.append(text)
+                                confidences.append(conf)
+                        else:
+                            # Skip malformed OCR result
+                            logger.debug(f"[OCR] Skipping malformed result: {line}")
+                            continue
 
                     if texts:
                         combined_text = ' '.join(texts)
