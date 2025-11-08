@@ -252,7 +252,7 @@ def process_single_question(
                 num_patches_list = yolo_num_patches_list + normal_num_patches_list
                 pil_images = yolo_pil_images + normal_pil_images
                 # Combine frame indices: YOLO indices + uniform indices
-                all_frame_indices = frame_indices + (uniform_frame_indices if uniform_frame_indices else [])
+                all_frame_indices = (frame_indices if frame_indices else []) + (uniform_frame_indices if uniform_frame_indices is not None else [])
                 strategy = '2x1_grid_yolo_and_uniform'
                 print(f"  [Video] Combined: {len(yolo_num_patches_list)} YOLO + {len(normal_num_patches_list)} uniform = {len(num_patches_list)} total frames")
             elif yolo_pixel_values is not None:
@@ -268,7 +268,7 @@ def process_single_question(
                 pixel_values = normal_pixel_values
                 num_patches_list = normal_num_patches_list
                 pil_images = normal_pil_images
-                all_frame_indices = uniform_frame_indices if uniform_frame_indices else []
+                all_frame_indices = uniform_frame_indices if uniform_frame_indices is not None else []
                 strategy = '2x1_grid_uniform_only'
                 # Keep detections_dict as None for uniform-only case
                 print(f"  [Video] Using only uniform frames: {len(num_patches_list)} frames")

@@ -272,7 +272,8 @@ def load_video_force_2x1_grid(
     print(f"[2x1 Grid Loader] Pixel values shape: {pixel_values.shape}")
     print(f"[2x1 Grid Loader] Frame indices: {frame_indices}")
 
-    return pixel_values, num_patches_list, pil_images_for_ocr, frame_indices
+    # Convert numpy array to list for easier concatenation
+    return pixel_values, num_patches_list, pil_images_for_ocr, frame_indices.tolist()
 
 
 def load_video_from_indices_2x1_grid(
